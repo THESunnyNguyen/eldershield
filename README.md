@@ -1,15 +1,15 @@
-# ElderShield 🛡️  
+# ElderShield 
 AI-Powered Scam Detection & Awareness Platform
 
-ElderShield is a cybersecurity-focused web application designed to protect elderly users from scams such as phishing, impersonation fraud, tech support scams, romance scams, and malicious links. The platform allows seniors to submit suspicious messages/calls/URLs, receive an AI-generated risk assessment in plain language, and enables caregivers/admins to monitor threats and intervene early.
+ElderShield is a cybersecurity-focused web application designed to protect elderly users from scams such as phishing, impersonation fraud, tech support scams, romance scams, and malicious links. The platform allows seniors to submit screenshots or summaries of suspicious messages/calls/URLs, receive an AI-generated risk assessment in plain language, and enables caregivers/admins to monitor threats and intervene early.
 
 ---
 
-## 📌 Project Overview
+## Project Overview
 
 ElderShield is built with a dual-interface system:
 
-### 👴 Elder User Interface
+### Elder User Interface
 A simplified, accessibility-first interface designed for seniors.
 
 Key capabilities:
@@ -19,19 +19,18 @@ Key capabilities:
 - Get simple explanations and “What to do next” guidance
 - Review previously submitted reports
 
-### 🧑‍⚕️ Caregiver/Admin Dashboard
+### Caregiver/Admin Dashboard
 A management console for monitoring and intervention.
 
 Key capabilities:
 - Monitor all incident submissions
-- View high-risk scams flagged by AI
+- View high-risk scams flagged by AI / Admin
 - Manage user accounts and caregiver relationships
 - Validate scam incidents and take action
-- Export data for reporting/escalation
 
 ---
 
-## 🎯 Goals
+## Goals
 - Reduce scam victimization among elderly populations
 - Provide easy-to-understand scam explanations
 - Enable caregivers to intervene before financial or emotional harm occurs
@@ -39,9 +38,9 @@ Key capabilities:
 
 ---
 
-## 🧠 AI Component (Key Differentiator)
+## AI Component (Key Differentiator)
 
-ElderShield uses an NLP-based AI engine (OpenAI API) to analyze scam reports and detect patterns such as:
+ElderShield uses an NLP-based AI engine (Grok API) to analyze scam reports and detect patterns such as:
 - urgency/time pressure
 - fear-based language
 - authority impersonation
@@ -55,61 +54,13 @@ Each incident generates structured AI output:
 
 ---
 
-## 🗃️ Database / ERD (Final Schema)
+## Database / ERD (Final Schema)
 
 This project is built around a relational database design using **MySQL**.
 
 ### Entities (5 Total)
 
-#### 1) Users
-| Field | Type | Notes |
-|------|------|------|
-| user_id | PK | unique user ID |
-| full_name | text | |
-| email | text | unique |
-| password_hash | text | securely stored |
-| role | enum | elder / caregiver / admin |
-| created_at | timestamp | |
-
-#### 2) Incidents
-| Field | Type | Notes |
-|------|------|------|
-| incident_id | PK | |
-| user_id | FK | → users.user_id |
-| content | text | suspicious message/call/URL |
-| status | text | pending/analyzed/resolved |
-| submitted_at | timestamp | |
-
-#### 3) Analysis
-| Field | Type | Notes |
-|------|------|------|
-| analysis_id | PK | |
-| incident_id | FK | → incidents.incident_id |
-| scam_probability | int | 0–100 |
-| scam_category | text | |
-| explanation_simple | text | plain language |
-| recommended_action | text | |
-| created_at | timestamp | |
-
-#### 4) Notifications
-| Field | Type | Notes |
-|------|------|------|
-| notification_id | PK | |
-| incident_id | FK | → incidents.incident_id |
-| recipient_user_id | FK | → users.user_id |
-| message_text | text | |
-| notification_type | text | |
-| created_at | timestamp | |
-
-#### 5) Account_links
-| Field | Type | Notes |
-|------|------|------|
-| link_id | PK | |
-| elder_user_id | FK | → users.user_id |
-| caregiver_user_id | FK | → users.user_id |
-| relationship_type | text | child/spouse/etc |
-| status | text | active/inactive |
-| created_at | timestamp | |
+![Alt text for the image](docs/ERD.png)
 
 ---
 
@@ -147,7 +98,7 @@ This project is built around a relational database design using **MySQL**.
 
 ---
 
-## 🔐 Cybersecurity & Privacy
+## Cybersecurity & Privacy
 
 Security considerations built into the design:
 - Password hashing
@@ -159,26 +110,26 @@ Security considerations built into the design:
 
 ---
 
-## 🧰 Technology Stack
+## Technology Stack
 
 | Layer | Technology |
 |------|------------|
-| Backend | PHP (PDO, MVC optional) |
+| Backend | PHP |
 | Database | MySQL |
 | Frontend | HTML5 + Bootstrap |
-| AI/NLP | OpenAI API |
+| AI/NLP | Grok API |
 | Security | Hashing + Sessions |
-| Hosting | Cloud (AWS/GCP/Azure) |
+| Hosting | Cloud (Azure) |
 
 ---
 
-## 👥 Team
+## Team
 - Sunny Nguyen  
 - Joe Milner  
 - Cameron Hubbard  
 
 ---
 
-## 📄 License
+## License
 This project is an academic system proposal and prototype for IS 6465.  
 All rights reserved unless otherwise stated.
