@@ -64,7 +64,7 @@ This project is built around a relational database design using **MySQL**.
 
 ---
 
-## 🔁 CRUD Functionality (Core Features)
+## CRUD Functionality (Core Features)
 
 ### Users (User Management)
 - Create user accounts (elder, caregiver, admin)
