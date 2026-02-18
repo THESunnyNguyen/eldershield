@@ -117,7 +117,7 @@ Security considerations built into the design:
 | Backend | PHP |
 | Database | MySQL |
 | Frontend | HTML5 + Bootstrap |
-| AI/NLP | Grok API |
+| AI/NLP | OpenAI API |
 | Security | Hashing + Sessions |
 | Hosting | Cloud (Azure) |
 
