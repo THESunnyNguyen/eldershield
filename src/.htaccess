@@ -1,0 +1,18 @@
+Options -Indexes
+
+# Security headers
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+    Header set X-Frame-Options "SAMEORIGIN"
+    Header set X-XSS-Protection "1; mode=block"
+    Header set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>
+
+# Protect sensitive files
+<FilesMatch "^(config|\.env|composer\.json)">
+    Order Deny,Allow
+    Deny from all
+</FilesMatch>
+
+# Redirect root to index.php
+DirectoryIndex index.php
