@@ -4,6 +4,7 @@
 // ============================================================
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/../includes/helpers.php';
 require_once __DIR__ . '/../includes/subscription_helper.php';
 
 requireLogin();
@@ -13,11 +14,13 @@ $flash  = getFlash();
 $errors = [];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // CSRF check
+
+    // CSRF failure → 403 immediately (OWASP best practice)
     if (!verifyCsrf($_POST['csrf_token'] ?? '')) {
+        http_response_code(403);
         $errors[] = 'Invalid request. Please try again.';
     } else {
-        // Whitelist plan selection
+        // Whitelist plan — never trust raw POST value
         $plan = trim($_POST['plan'] ?? '');
         if (!in_array($plan, ['free', 'premium'], true)) {
             $errors[] = 'Invalid plan selected.';
@@ -25,10 +28,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         // Simulated payment validation for premium
         if (empty($errors) && $plan === 'premium') {
-            $cardName   = trim($_POST['card_name']   ?? '');
+            $cardName   = trim($_POST['card_name'] ?? '');
+            // Strip all non-digits from card number before length check
             $cardNumber = preg_replace('/\D/', '', $_POST['card_number'] ?? '');
             $cardExpiry = trim($_POST['card_expiry'] ?? '');
-            $cardCvc    = trim($_POST['card_cvc']    ?? '');
+            $cardCvc    = trim($_POST['card_cvc'] ?? '');
+
+            // filter_var for integer-range checks (OWASP C3)
+            $cvcInt = filter_var($cardCvc, FILTER_VALIDATE_INT,
+                        ['options' => ['min_range' => 100, 'max_range' => 9999]]);
 
             if (empty($cardName) || strlen($cardName) > 100)
                 $errors[] = 'Cardholder name is required.';
@@ -36,7 +44,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $errors[] = 'Enter a valid card number.';
             if (!preg_match('/^\d{2}\/\d{2}$/', $cardExpiry))
                 $errors[] = 'Expiry must be MM/YY.';
-            if (!preg_match('/^\d{3,4}$/', $cardCvc))
+            if ($cvcInt === false)
                 $errors[] = 'CVC must be 3–4 digits.';
         }
 
@@ -61,23 +69,24 @@ require_once __DIR__ . '/../includes/header.php';
 
     <?php if ($flash): ?>
         <div class="alert alert-<?= $flash['type'] === 'success' ? 'success' : 'danger' ?>">
-            <?= htmlspecialchars($flash['message']) ?>
+            <?= e($flash['message']) ?>
         </div>
     <?php endif; ?>
 
     <?php if ($errors): ?>
         <div class="alert alert-danger">
-            <?php foreach ($errors as $e): ?>
-                <div><?= htmlspecialchars($e) ?></div>
+            <?php foreach ($errors as $err): ?>
+                <div><?= e($err) ?></div>
             <?php endforeach; ?>
         </div>
     <?php endif; ?>
 
     <p class="text-muted mb-4">
-        Current plan: <strong><?= htmlspecialchars(ucfirst($sub['plan_name'])) ?></strong>
+        Current plan: <strong><?= e(ucfirst($sub['plan_name'])) ?></strong>
     </p>
 
     <div class="row g-4 mb-5">
+
         <!-- Free Plan -->
         <div class="col-md-5">
             <div class="card h-100 <?= $sub['plan_name'] === 'free' ? 'border-primary' : '' ?>">
