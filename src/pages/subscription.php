@@ -61,11 +61,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
+$pageTitle = 'Subscription Plans';
 require_once __DIR__ . '/../includes/header.php';
 ?>
 
-<div class="container py-5">
-    <h2 class="mb-4">Subscription Plans</h2>
+<div class="page-container">
+    <div class="page-header">
+        <h1>Subscription Plans</h1>
+        <span>Current plan:
+            <span class="plan-badge plan-<?= e($sub['plan_name']) ?>">
+                <?= $sub['plan_name'] === 'premium' ? '⭐ Premium' : '🔓 Free' ?>
+            </span>
+        </span>
+    </div>
 
     <?php if ($flash): ?>
         <div class="alert alert-<?= $flash['type'] === 'success' ? 'success' : 'danger' ?>">
@@ -81,102 +89,90 @@ require_once __DIR__ . '/../includes/header.php';
         </div>
     <?php endif; ?>
 
-    <p class="text-muted mb-4">
-        Current plan: <strong><?= e(ucfirst($sub['plan_name'])) ?></strong>
-    </p>
-
-    <div class="row g-4 mb-5">
+    <!-- Plan cards -->
+    <div class="plan-grid">
 
         <!-- Free Plan -->
-        <div class="col-md-5">
-            <div class="card h-100 <?= $sub['plan_name'] === 'free' ? 'border-primary' : '' ?>">
-                <div class="card-body">
-                    <h4 class="card-title">Free</h4>
-                    <p class="display-6">$0<small class="fs-6 text-muted">/mo</small></p>
-                    <ul class="list-unstyled">
-                        <li>✅ Up to 5 incidents/month</li>
-                        <li>✅ AI risk analysis</li>
-                        <li>❌ Caregiver notifications</li>
-                    </ul>
-                    <?php if ($sub['plan_name'] !== 'free'): ?>
-                        <form method="POST">
-                            <?= csrfField() ?>
-                            <input type="hidden" name="plan" value="free">
-                            <button class="btn btn-outline-secondary w-100"
-                                    onclick="return confirm('Downgrade to Free?')">
-                                Switch to Free
-                            </button>
-                        </form>
-                    <?php else: ?>
-                        <button class="btn btn-primary w-100" disabled>Current Plan</button>
-                    <?php endif; ?>
-                </div>
-            </div>
+        <div class="card plan-card <?= $sub['plan_name'] === 'free' ? 'plan-card-active' : '' ?>">
+            <h2>🔓 Free</h2>
+            <p class="plan-price">$0 <span class="plan-period">/month</span></p>
+            <ul class="plan-features">
+                <li>✅ Up to <?= (int)FREE_INCIDENT_LIMIT ?> incident reports/month</li>
+                <li>✅ AI risk analysis</li>
+                <li>❌ Caregiver notifications</li>
+            </ul>
+            <?php if ($sub['plan_name'] !== 'free'): ?>
+                <form method="POST">
+                    <?= csrfField() ?>
+                    <input type="hidden" name="plan" value="free">
+                    <button class="btn btn-secondary btn-full"
+                            onclick="return confirm('Switch to Free plan? Caregiver notifications will be disabled.')">
+                        Switch to Free
+                    </button>
+                </form>
+            <?php else: ?>
+                <button class="btn btn-primary btn-full" disabled>✓ Current Plan</button>
+            <?php endif; ?>
         </div>
 
         <!-- Premium Plan -->
-        <div class="col-md-5">
-            <div class="card h-100 <?= $sub['plan_name'] === 'premium' ? 'border-primary' : '' ?>">
-                <div class="card-body">
-                    <h4 class="card-title">Premium</h4>
-                    <p class="display-6">$9.99<small class="fs-6 text-muted">/mo</small></p>
-                    <ul class="list-unstyled">
-                        <li>✅ Unlimited incidents</li>
-                        <li>✅ AI risk analysis</li>
-                        <li>✅ Caregiver notifications</li>
-                    </ul>
-                    <?php if ($sub['plan_name'] !== 'premium'): ?>
-                        <button class="btn btn-primary w-100" data-bs-toggle="collapse"
-                                data-bs-target="#paymentForm">
-                            Upgrade to Premium
-                        </button>
-                    <?php else: ?>
-                        <button class="btn btn-success w-100" disabled>Current Plan ✓</button>
-                    <?php endif; ?>
-                </div>
-            </div>
+        <div class="card plan-card <?= $sub['plan_name'] === 'premium' ? 'plan-card-active' : '' ?>">
+            <h2>⭐ Premium</h2>
+            <p class="plan-price">$9.99 <span class="plan-period">/month</span></p>
+            <ul class="plan-features">
+                <li>✅ Unlimited incident reports</li>
+                <li>✅ AI risk analysis</li>
+                <li>✅ Caregiver notifications</li>
+            </ul>
+            <?php if ($sub['plan_name'] !== 'premium'): ?>
+                <!-- Toggle payment form visibility with plain JS — no Bootstrap needed -->
+                <button class="btn btn-primary btn-full" id="showPaymentBtn"
+                        onclick="document.getElementById('paymentForm').classList.toggle('hidden'); this.classList.add('hidden');">
+                    Upgrade to Premium
+                </button>
+            <?php else: ?>
+                <button class="btn btn-success btn-full" disabled>✓ Current Plan</button>
+            <?php endif; ?>
         </div>
     </div>
 
-    <!-- Simulated payment form (collapsed by default) -->
+    <!-- Simulated payment form (hidden by default, toggled via JS above) -->
     <?php if ($sub['plan_name'] !== 'premium'): ?>
-    <div class="collapse" id="paymentForm">
-        <div class="card card-body" style="max-width:480px;">
-            <h5 class="mb-3">Payment Details <small class="text-muted fs-6">(demo only)</small></h5>
-            <form method="POST" novalidate>
-                <?= csrfField() ?>
-                <input type="hidden" name="plan" value="premium">
+    <div class="card hidden" id="paymentForm" style="max-width:480px; margin-top:1.5rem;">
+        <h2>Payment Details <small style="font-size:.9rem; color:var(--color-muted);">(demo only)</small></h2>
+        <form method="POST" novalidate>
+            <?= csrfField() ?>
+            <input type="hidden" name="plan" value="premium">
 
-                <div class="mb-3">
-                    <label class="form-label">Cardholder Name</label>
-                    <input type="text" name="card_name" class="form-control"
-                           maxlength="100" autocomplete="cc-name" required>
+            <div class="form-group">
+                <label for="card_name">Cardholder Name</label>
+                <input type="text" id="card_name" name="card_name"
+                       maxlength="100" autocomplete="cc-name" required>
+            </div>
+            <div class="form-group">
+                <label for="card_number">Card Number</label>
+                <input type="text" id="card_number" name="card_number"
+                       maxlength="19" inputmode="numeric"
+                       autocomplete="cc-number" placeholder="•••• •••• •••• ••••" required>
+            </div>
+            <div class="form-inline">
+                <div class="form-group" style="flex:1;">
+                    <label for="card_expiry">Expiry (MM/YY)</label>
+                    <input type="text" id="card_expiry" name="card_expiry"
+                           maxlength="5" placeholder="MM/YY"
+                           autocomplete="cc-exp" required>
                 </div>
-                <div class="mb-3">
-                    <label class="form-label">Card Number</label>
-                    <input type="text" name="card_number" class="form-control"
-                           maxlength="19" inputmode="numeric"
-                           autocomplete="cc-number" placeholder="•••• •••• •••• ••••" required>
+                <div class="form-group" style="flex:1;">
+                    <label for="card_cvc">CVC</label>
+                    <input type="text" id="card_cvc" name="card_cvc"
+                           maxlength="4" inputmode="numeric"
+                           autocomplete="cc-csc" placeholder="•••" required>
                 </div>
-                <div class="row">
-                    <div class="col mb-3">
-                        <label class="form-label">Expiry (MM/YY)</label>
-                        <input type="text" name="card_expiry" class="form-control"
-                               maxlength="5" placeholder="MM/YY"
-                               autocomplete="cc-exp" required>
-                    </div>
-                    <div class="col mb-3">
-                        <label class="form-label">CVC</label>
-                        <input type="text" name="card_cvc" class="form-control"
-                               maxlength="4" inputmode="numeric"
-                               autocomplete="cc-csc" placeholder="•••" required>
-                    </div>
-                </div>
-                <button type="submit" class="btn btn-primary w-100">
-                    Pay $9.99 &amp; Activate Premium
-                </button>
-            </form>
-        </div>
+            </div>
+            <button type="submit" class="btn btn-primary btn-full">
+                Pay $9.99 &amp; Activate Premium
+            </button>
+        </form>
     </div>
     <?php endif; ?>
 </div>
