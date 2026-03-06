@@ -3,18 +3,17 @@
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/helpers.php';
-require_once __DIR__ . '/../includes/subscription_helper.php';
+require_once __DIR__ . '/../includes/billing_helper.php';
 
 $user        = currentUser();
 $unreadCount = isLoggedIn() ? countUnreadNotifications((int)$user['user_id']) : 0;
 $pageTitle   = $pageTitle ?? APP_NAME;
 $flash       = getFlash();
 
-// Load plan badge for logged-in users
-$planName = '';
-if (isLoggedIn()) {
-    $sub      = getUserSubscription($user['user_id']);
-    $planName = $sub['plan_name'];
+// Check billing restriction for caregivers — enforced server-side on every page load
+$billingRestricted = false;
+if (isLoggedIn() && $user['role'] === 'caregiver') {
+    $billingRestricted = caregiverAccessRestricted((int)$user['user_id']);
 }
 ?>
 <!DOCTYPE html>
@@ -26,6 +25,13 @@ if (isLoggedIn()) {
     <link rel="stylesheet" href="<?= APP_URL ?>/assets/css/style.css">
 </head>
 <body class="role-<?= e($user['role'] ?? 'guest') ?>">
+
+<?php if ($billingRestricted): ?>
+<div class="billing-banner">
+    ⚠️ <strong>Your account has restricted access due to a failed payment.</strong>
+    <a href="<?= APP_URL ?>/pages/billing.php" class="billing-banner-link">Resolve now →</a>
+</div>
+<?php endif; ?>
 
 <nav class="navbar">
     <div class="nav-brand">
@@ -42,18 +48,19 @@ if (isLoggedIn()) {
             <?php if ($user['role'] === 'admin'): ?>
                 <li><a href="<?= APP_URL ?>/pages/admin_users.php">Users</a></li>
             <?php endif; ?>
+            <?php if ($user['role'] === 'caregiver'): ?>
+                <li>
+                    <a href="<?= APP_URL ?>/pages/billing.php"
+                       class="<?= $billingRestricted ? 'nav-billing-alert' : '' ?>">
+                        💳 Billing<?= $billingRestricted ? ' ⚠️' : '' ?>
+                    </a>
+                </li>
+            <?php endif; ?>
         <?php endif; ?>
 
         <li>
             <a href="<?= APP_URL ?>/pages/notifications.php" class="notif-link">
                 🔔 <?= $unreadCount > 0 ? "<span class=\"badge-notif\">{$unreadCount}</span>" : '' ?>
-            </a>
-        </li>
-
-        <!-- Subscription badge + link -->
-        <li>
-            <a href="<?= APP_URL ?>/pages/subscription.php" class="plan-badge plan-<?= e($planName) ?>">
-                <?= $planName === 'premium' ? '⭐ Premium' : '🔓 Free' ?>
             </a>
         </li>
 
