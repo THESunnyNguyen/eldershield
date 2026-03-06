@@ -164,11 +164,16 @@ function deleteIncident(int $incidentId, int $userId, string $role): bool {
 // NOTIFICATIONS
 // ════════════════════════════════════════════════════════════
 
+/**
+ * Create an incident-linked notification.
+ * incident_id is now nullable in the schema — use NULL for billing notifications.
+ */
 function createNotification(int $incidentId, int $recipientId, string $message, string $type = 'info'): void {
     $db   = getDB();
     $stmt = $db->prepare(
-        'INSERT INTO notifications (incident_id, recipient_user_id, message_text, notification_type)
-         VALUES (?, ?, ?, ?)'
+        'INSERT INTO notifications
+            (incident_id, recipient_user_id, message_text, notification_type, notification_category)
+         VALUES (?, ?, ?, ?, "incident")'
     );
     $stmt->execute([$incidentId, $recipientId, $message, $type]);
 }
@@ -209,14 +214,17 @@ function getNotificationsForUser(int $userId, bool $unreadOnly = false): array {
     $db    = getDB();
     $where = $unreadOnly ? 'AND n.is_read = 0' : '';
     $stmt  = $db->prepare(
-        "SELECT n.*, i.content as incident_content, u.full_name as elder_name
+        "SELECT n.*,
+                i.content  AS incident_content,
+                u.full_name AS elder_name
          FROM notifications n
-         JOIN incidents i ON n.incident_id = i.incident_id
-         JOIN users u ON i.user_id = u.user_id
+         LEFT JOIN incidents i ON n.incident_id = i.incident_id
+         LEFT JOIN users u     ON i.user_id = u.user_id
          WHERE n.recipient_user_id = ? {$where}
          ORDER BY n.created_at DESC
          LIMIT 50"
     );
+    // Changed JOIN → LEFT JOIN so billing notifications (incident_id=NULL) are included
     $stmt->execute([$userId]);
     return $stmt->fetchAll();
 }
@@ -237,36 +245,72 @@ function countUnreadNotifications(int $userId): int {
 // ACCOUNT LINKS (caregiver <-> elder)
 // ════════════════════════════════════════════════════════════
 
+/**
+ * Create a pending link request.
+ * Checks for an existing active/pending link first to avoid
+ * duplicate-key errors (the new unique key includes status,
+ * so there can only be one active and one pending per pair).
+ */
 function linkCaregiverToElder(int $elderUserId, int $caregiverUserId, string $relationshipType = 'caregiver'): array {
     $db = getDB();
+
+    // Block if already active or pending
+    $check = $db->prepare(
+        'SELECT link_id FROM account_links
+         WHERE elder_user_id = ? AND caregiver_user_id = ? AND status IN ("active","pending")
+         LIMIT 1'
+    );
+    $check->execute([$elderUserId, $caregiverUserId]);
+    if ($check->fetch()) {
+        return ['success' => false, 'message' => 'A link request already exists for this relationship.'];
+    }
+
     try {
         $stmt = $db->prepare(
-            'INSERT INTO account_links (elder_user_id, caregiver_user_id, relationship_type, status)
-             VALUES (?, ?, ?, "pending")'
+            'INSERT INTO account_links
+                (elder_user_id, caregiver_user_id, relationship_type, status, linked_at)
+             VALUES (?, ?, ?, "pending", NULL)'
+            // linked_at set to UTC_TIMESTAMP() when approved, not when requested
         );
         $stmt->execute([$elderUserId, $caregiverUserId, $relationshipType]);
-        return ['success' => true];
+        return ['success' => true, 'link_id' => (int)$db->lastInsertId()];
     } catch (PDOException $e) {
-        if ($e->getCode() === '23000') {
-            return ['success' => false, 'message' => 'This relationship already exists.'];
-        }
         return ['success' => false, 'message' => 'Failed to create link.'];
     }
 }
 
+/**
+ * Approve a pending link — set status=active and record linked_at timestamp.
+ * linked_at marks the start of the billing period for proration.
+ */
 function approveLink(int $linkId): void {
-    getDB()->prepare('UPDATE account_links SET status="active" WHERE link_id=?')->execute([$linkId]);
+    getDB()->prepare(
+        'UPDATE account_links
+         SET status = "active", linked_at = UTC_TIMESTAMP()
+         WHERE link_id = ? AND status = "pending"'
+    )->execute([$linkId]);
 }
 
+/**
+ * Revoke an active link — soft delete with unlinked_at timestamp.
+ * Row is kept for billing proration history.
+ * The unique key (elder_user_id, caregiver_user_id, status) allows
+ * a new "active" link to be created later for the same pair.
+ */
 function revokeLink(int $linkId): void {
-    getDB()->prepare('UPDATE account_links SET status="revoked" WHERE link_id=?')->execute([$linkId]);
+    getDB()->prepare(
+        'UPDATE account_links
+         SET status = "revoked", unlinked_at = UTC_TIMESTAMP()
+         WHERE link_id = ? AND status = "active"'
+    )->execute([$linkId]);
 }
 
 function getLinksForElder(int $elderUserId): array {
     $stmt = getDB()->prepare(
         'SELECT al.*, u.full_name, u.email FROM account_links al
          JOIN users u ON al.caregiver_user_id = u.user_id
-         WHERE al.elder_user_id = ?'
+         WHERE al.elder_user_id = ?
+         ORDER BY al.created_at DESC'
     );
     $stmt->execute([$elderUserId]);
     return $stmt->fetchAll();
@@ -276,10 +320,27 @@ function getLinksForCaregiver(int $caregiverId): array {
     $stmt = getDB()->prepare(
         'SELECT al.*, u.full_name, u.email FROM account_links al
          JOIN users u ON al.elder_user_id = u.user_id
-         WHERE al.caregiver_user_id = ? AND al.status = "active"'
+         WHERE al.caregiver_user_id = ? AND al.status = "active"
+         ORDER BY u.full_name'
     );
     $stmt->execute([$caregiverId]);
     return $stmt->fetchAll();
+}
+
+// ════════════════════════════════════════════════════════════
+// ADMIN — SCAM TYPE OVERRIDE
+// ════════════════════════════════════════════════════════════
+
+/**
+ * Admin override: update scam category and mark admin_override flag.
+ */
+function updateScamCategory(int $incidentId, string $category): bool {
+    $category = trim(strip_tags($category));
+    if (empty($category) || strlen($category) > 100) return false;
+    $stmt = getDB()->prepare(
+        'UPDATE analysis SET scam_category = ?, admin_override = 1 WHERE incident_id = ?'
+    );
+    return $stmt->execute([$category, $incidentId]);
 }
 
 // ════════════════════════════════════════════════════════════
