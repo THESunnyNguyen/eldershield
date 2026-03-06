@@ -1,14 +1,21 @@
 <?php
 // includes/header.php
-// Usage: include with $pageTitle set beforehand
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/helpers.php';
+require_once __DIR__ . '/../includes/subscription_helper.php';
 
-$user          = currentUser();
-$unreadCount   = isLoggedIn() ? countUnreadNotifications((int)$user['user_id']) : 0;
-$pageTitle     = $pageTitle ?? APP_NAME;
-$flash         = getFlash();
+$user        = currentUser();
+$unreadCount = isLoggedIn() ? countUnreadNotifications((int)$user['user_id']) : 0;
+$pageTitle   = $pageTitle ?? APP_NAME;
+$flash       = getFlash();
+
+// Load plan badge for logged-in users
+$planName = '';
+if (isLoggedIn()) {
+    $sub      = getUserSubscription($user['user_id']);
+    $planName = $sub['plan_name'];
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -29,18 +36,27 @@ $flash         = getFlash();
         <?php if ($user['role'] === 'elder'): ?>
             <li><a href="<?= APP_URL ?>/pages/submit.php">Report Scam</a></li>
             <li><a href="<?= APP_URL ?>/pages/my_incidents.php">My Reports</a></li>
-        <?php elseif (in_array($user['role'], ['caregiver','admin'])): ?>
+        <?php elseif (in_array($user['role'], ['caregiver', 'admin'])): ?>
             <li><a href="<?= APP_URL ?>/pages/dashboard.php">Dashboard</a></li>
             <li><a href="<?= APP_URL ?>/pages/incidents.php">All Reports</a></li>
             <?php if ($user['role'] === 'admin'): ?>
-            <li><a href="<?= APP_URL ?>/pages/admin_users.php">Users</a></li>
+                <li><a href="<?= APP_URL ?>/pages/admin_users.php">Users</a></li>
             <?php endif; ?>
         <?php endif; ?>
+
         <li>
             <a href="<?= APP_URL ?>/pages/notifications.php" class="notif-link">
                 🔔 <?= $unreadCount > 0 ? "<span class=\"badge-notif\">{$unreadCount}</span>" : '' ?>
             </a>
         </li>
+
+        <!-- Subscription badge + link -->
+        <li>
+            <a href="<?= APP_URL ?>/pages/subscription.php" class="plan-badge plan-<?= e($planName) ?>">
+                <?= $planName === 'premium' ? '⭐ Premium' : '🔓 Free' ?>
+            </a>
+        </li>
+
         <li><a href="<?= APP_URL ?>/pages/profile.php"><?= e($user['full_name']) ?></a></li>
         <li><a href="<?= APP_URL ?>/pages/logout.php">Logout</a></li>
     </ul>
