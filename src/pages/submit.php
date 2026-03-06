@@ -10,16 +10,19 @@ require_once __DIR__ . '/../includes/subscription_helper.php';
 requireLogin();
 requireRole('elder');
 
-$user   = currentUser();
+$user = currentUser();
 $errors = [];
 
 // ── Subscription gate (server-side enforcement) ───────────────
-$sub            = getUserSubscription($user['user_id']);
-$monthlyCount   = getMonthlyIncidentCount($user['user_id']);
-$limitReached   = !canSubmitIncident($user['user_id']);
+$sub          = getUserSubscription($user['user_id']);
+$monthlyCount = getMonthlyIncidentCount($user['user_id']);
+$limitReached = !canSubmitIncident($user['user_id']);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+
+    // CSRF failure → 403 immediately (OWASP best practice)
     if (!verifyCsrf($_POST['csrf_token'] ?? '')) {
+        http_response_code(403);
         $errors[] = 'Invalid form submission. Please try again.';
     } elseif ($limitReached) {
         // Re-check server-side on POST — cannot be bypassed via JS
@@ -81,19 +84,19 @@ include __DIR__ . '/../includes/header.php';
         <?php endif; ?>
 
         <?php if ($limitReached): ?>
-            <!-- Hard block with upgrade prompt -->
+            <!-- Hard block with upgrade prompt — integers are safe but cast explicitly -->
             <div class="alert alert-warning">
                 <strong>Monthly limit reached.</strong>
-                You've used <?= $monthlyCount ?> of <?= FREE_INCIDENT_LIMIT ?> free submissions this month.
-                <a href="<?= APP_URL ?>/pages/subscription.php" class="btn btn-sm btn-primary ms-2">
+                You've used <?= (int)$monthlyCount ?> of <?= (int)FREE_INCIDENT_LIMIT ?> free submissions this month.
+                <a href="<?= e(APP_URL) ?>/pages/subscription.php" class="btn btn-sm btn-primary ms-2">
                     Upgrade to Premium
                 </a>
             </div>
         <?php else: ?>
             <?php if ($sub['plan_name'] === 'free'): ?>
                 <div class="alert alert-info">
-                    <?= $monthlyCount ?> of <?= FREE_INCIDENT_LIMIT ?> free submissions used this month.
-                    <a href="<?= APP_URL ?>/pages/subscription.php">Upgrade for unlimited access.</a>
+                    <?= (int)$monthlyCount ?> of <?= (int)FREE_INCIDENT_LIMIT ?> free submissions used this month.
+                    <a href="<?= e(APP_URL) ?>/pages/subscription.php">Upgrade for unlimited access.</a>
                 </div>
             <?php endif; ?>
 
@@ -115,7 +118,7 @@ include __DIR__ . '/../includes/header.php';
                                accept="image/*" class="upload-input">
                         <div class="upload-label">
                             <span>Click to upload or drag &amp; drop an image</span>
-                            <small>JPG, PNG, GIF, WEBP · Max <?= UPLOAD_MAX_MB ?>MB</small>
+                            <small>JPG, PNG, GIF, WEBP · Max <?= (int)UPLOAD_MAX_MB ?>MB</small>
                         </div>
                         <div id="imagePreview" class="image-preview hidden"></div>
                     </div>
@@ -153,7 +156,8 @@ document.getElementById('screenshot')?.addEventListener('change', function(e) {
     const reader = new FileReader();
     reader.onload = function(ev) {
         const preview = document.getElementById('imagePreview');
-        preview.innerHTML = '<img src="' + ev.target.result + '" alt="Preview"><button type="button" onclick="clearImage()" class="btn btn-sm btn-secondary">Remove</button>';
+        preview.innerHTML = '<img src="' + ev.target.result + '" alt="Preview">'
+            + '<button type="button" onclick="clearImage()" class="btn btn-sm btn-secondary">Remove</button>';
         preview.classList.remove('hidden');
         document.querySelector('.upload-label').classList.add('hidden');
     };
