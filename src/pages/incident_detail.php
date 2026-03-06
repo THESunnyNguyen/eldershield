@@ -20,7 +20,7 @@ if (!$incident) {
     exit;
 }
 
-// Access control: elder can only see their own; caregiver sees linked elders; admin sees all
+// Access control: elder sees own; caregiver sees linked elders; admin sees all
 $db = getDB();
 if ($user['role'] === 'elder' && $incident['user_id'] != $user['user_id']) {
     header('Location: ' . APP_URL . '/pages/dashboard.php');
@@ -38,26 +38,47 @@ if ($user['role'] === 'caregiver') {
     }
 }
 
-// Handle admin status update
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array($user['role'], ['admin','caregiver'])) {
+// ── Handle POST actions ───────────────────────────────────────
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+
+    // CSRF failure → 403 immediately
     if (!verifyCsrf($_POST['csrf_token'] ?? '')) {
+        http_response_code(403);
         setFlash('danger', 'Invalid form token.');
-    } else {
+        header('Location: ' . APP_URL . '/pages/incident_detail.php?id=' . $incidentId);
+        exit;
+    }
+
+    $action = $_POST['action'] ?? 'update_status';
+
+    // ── Issue #3: Admin edits scam type ───────────────────────
+    if ($action === 'edit_scam_type' && $user['role'] === 'admin') {
+        $newCategory = trim(strip_tags($_POST['scam_category'] ?? ''));
+        if ($newCategory === '' || strlen($newCategory) > 100) {
+            setFlash('danger', 'Scam type must be between 1 and 100 characters.');
+        } elseif (updateScamCategory($incidentId, $newCategory)) {
+            setFlash('success', 'Scam type updated.');
+        } else {
+            setFlash('danger', 'Could not update scam type — no analysis record found.');
+        }
+
+    // ── Status update (admin + caregiver) ────────────────────
+    } elseif ($action === 'update_status' && in_array($user['role'], ['admin', 'caregiver'])) {
         $newStatus = $_POST['status'] ?? '';
         if ($newStatus) {
             updateIncidentStatus($incidentId, $newStatus);
             setFlash('success', 'Status updated.');
         }
     }
+
     header('Location: ' . APP_URL . '/pages/incident_detail.php?id=' . $incidentId);
     exit;
 }
 
-$probability  = (float)($incident['scam_probability'] ?? 0);
-$riskLevel    = getRiskLevel($probability);
-$tactics      = json_decode($incident['manipulation_tactics'] ?? '[]', true) ?: [];
+$probability = (float)($incident['scam_probability'] ?? 0);
+$riskLevel   = getRiskLevel($probability);
+$tactics     = json_decode($incident['manipulation_tactics'] ?? '[]', true) ?: [];
 
-// Get the owner's name
 $ownerStmt = $db->prepare('SELECT full_name FROM users WHERE user_id=?');
 $ownerStmt->execute([$incident['user_id']]);
 $ownerName = $ownerStmt->fetchColumn();
@@ -69,19 +90,22 @@ include __DIR__ . '/../includes/header.php';
 <div class="detail-container">
 
     <div class="detail-header">
-        <a href="<?= APP_URL ?>/pages/<?= $user['role'] === 'elder' ? 'my_incidents' : 'incidents' ?>.php"
+        <a href="<?= e(APP_URL) ?>/pages/<?= $user['role'] === 'elder' ? 'my_incidents' : 'incidents' ?>.php"
            class="back-link">← Back to Reports</a>
-        <h1>Scam Report #<?= $incidentId ?></h1>
+        <h1>Scam Report #<?= (int)$incidentId ?></h1>
         <div class="detail-meta">
             <span>Submitted by <strong><?= e($ownerName) ?></strong></span>
-            <span><?= date('F j, Y g:i A', strtotime($incident['submitted_at'])) ?></span>
+            <span><?= e(date('F j, Y g:i A', strtotime($incident['submitted_at']))) ?></span>
             <span class="status-badge status-<?= e($incident['status']) ?>"><?= e(ucfirst($incident['status'])) ?></span>
+            <?php if (!empty($incident['admin_override'])): ?>
+                <span class="badge badge-info" title="Scam type was manually edited by an admin">✏️ Edited</span>
+            <?php endif; ?>
         </div>
     </div>
 
     <?php if ($incident['scam_probability'] !== null): ?>
     <!-- ── AI RESULT CARD ─────────────────────────────────────── -->
-    <div class="result-card result-<?= $riskLevel ?>">
+    <div class="result-card result-<?= e($riskLevel) ?>">
         <div class="result-score-area">
             <div class="risk-gauge">
                 <div class="gauge-fill" style="width: <?= round($probability) ?>%"></div>
@@ -134,23 +158,24 @@ include __DIR__ . '/../includes/header.php';
         <?php if ($incident['image_path'] && file_exists($incident['image_path'])): ?>
         <div class="submission-image">
             <h3>Attached Screenshot</h3>
-            <img src="<?= APP_URL ?>/uploads/<?= e(basename($incident['image_path'])) ?>"
+            <img src="<?= e(APP_URL) ?>/uploads/<?= e(basename($incident['image_path'])) ?>"
                  alt="Submitted screenshot" class="screenshot-img">
         </div>
         <?php endif; ?>
     </div>
 
-    <!-- ── ADMIN/CAREGIVER CONTROLS ──────────────────────────── -->
-    <?php if (in_array($user['role'], ['admin','caregiver'])): ?>
+    <!-- ── ADMIN / CAREGIVER CONTROLS ────────────────────────── -->
+    <?php if (in_array($user['role'], ['admin', 'caregiver'])): ?>
     <div class="admin-controls">
         <h2>Update Status</h2>
-        <form method="POST" action="">
+        <form method="POST">
             <?= csrfField() ?>
+            <input type="hidden" name="action" value="update_status">
             <div class="form-inline">
                 <select name="status">
-                    <?php foreach (['pending','analyzed','reviewed','dismissed'] as $s): ?>
-                        <option value="<?= $s ?>" <?= $incident['status']==$s ? 'selected':'' ?>>
-                            <?= ucfirst($s) ?>
+                    <?php foreach (['pending', 'analyzed', 'reviewed', 'dismissed'] as $s): ?>
+                        <option value="<?= e($s) ?>" <?= $incident['status'] === $s ? 'selected' : '' ?>>
+                            <?= e(ucfirst($s)) ?>
                         </option>
                     <?php endforeach; ?>
                 </select>
@@ -159,8 +184,26 @@ include __DIR__ . '/../includes/header.php';
         </form>
 
         <?php if ($user['role'] === 'admin'): ?>
-        <div class="danger-zone">
-            <a href="<?= APP_URL ?>/api/delete_incident.php?id=<?= $incidentId ?>&csrf=<?= urlencode(csrfToken()) ?>"
+        <!-- ── Issue #3: Edit scam type ──────────────────────── -->
+        <h2 class="mt-4">Edit Scam Type</h2>
+        <form method="POST">
+            <?= csrfField() ?>
+            <input type="hidden" name="action" value="edit_scam_type">
+            <div class="form-inline">
+                <input type="text"
+                       name="scam_category"
+                       class="form-control"
+                       maxlength="100"
+                       value="<?= e($incident['scam_category'] ?? '') ?>"
+                       placeholder="e.g. phone_scam"
+                       required>
+                <button type="submit" class="btn btn-warning">Save Scam Type</button>
+            </div>
+            <small class="text-muted">Use underscores for spaces (e.g. romance_scam). Max 100 chars.</small>
+        </form>
+
+        <div class="danger-zone mt-4">
+            <a href="<?= e(APP_URL) ?>/api/delete_incident.php?id=<?= (int)$incidentId ?>&csrf=<?= urlencode(csrfToken()) ?>"
                class="btn btn-danger"
                onclick="return confirm('Permanently delete this incident?')">
                 🗑️ Delete Incident
@@ -170,10 +213,10 @@ include __DIR__ . '/../includes/header.php';
     </div>
     <?php endif; ?>
 
-    <!-- ── ELDER DELETE OWN REPORT ───────────────────────────── -->
+    <!-- ── ELDER: DELETE OWN REPORT ──────────────────────────── -->
     <?php if ($user['role'] === 'elder' && $incident['user_id'] == $user['user_id']): ?>
     <div class="elder-controls">
-        <a href="<?= APP_URL ?>/api/delete_incident.php?id=<?= $incidentId ?>&csrf=<?= urlencode(csrfToken()) ?>"
+        <a href="<?= e(APP_URL) ?>/api/delete_incident.php?id=<?= (int)$incidentId ?>&csrf=<?= urlencode(csrfToken()) ?>"
            class="btn btn-outline-danger btn-sm"
            onclick="return confirm('Remove this report from your history?')">
             Remove This Report
