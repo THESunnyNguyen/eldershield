@@ -147,6 +147,21 @@ function updateIncidentStatus(int $incidentId, string $status): void {
            ->execute([$status, $incidentId]);
 }
 
+// ── Issue #3: Admin can update scam_category on an analysed incident ─
+function updateScamCategory(int $incidentId, string $category): bool {
+    // Strip tags and trim — category is a short label, no HTML needed
+    $category = trim(strip_tags($category));
+    if ($category === '' || strlen($category) > 100) return false;
+
+    $db   = getDB();
+    $stmt = $db->prepare(
+        'UPDATE analysis SET scam_category = ?, admin_override = 1
+         WHERE incident_id = ?'
+    );
+    $stmt->execute([$category, $incidentId]);
+    return $stmt->rowCount() > 0;
+}
+
 function deleteIncident(int $incidentId, int $userId, string $role): bool {
     $db = getDB();
     if ($role === 'admin') {
@@ -182,7 +197,6 @@ function notifyCaregivers(int $incidentId, int $elderUserId, int $probability, s
     $stmt->execute([$elderUserId]);
     $caregivers = $stmt->fetchAll();
 
-    // Also get elder name
     $nameStmt = $db->prepare('SELECT full_name FROM users WHERE user_id=?');
     $nameStmt->execute([$elderUserId]);
     $elderName = $nameStmt->fetchColumn() ?: 'An elder user';
@@ -197,7 +211,6 @@ function notifyCaregivers(int $incidentId, int $elderUserId, int $probability, s
         createNotification($incidentId, (int)$cg['caregiver_user_id'], $message, $notifType);
     }
 
-    // Also notify admins
     $adminStmt = $db->prepare('SELECT user_id FROM users WHERE role="admin" AND is_active=1');
     $adminStmt->execute();
     foreach ($adminStmt->fetchAll() as $admin) {
@@ -258,8 +271,10 @@ function approveLink(int $linkId): void {
     getDB()->prepare('UPDATE account_links SET status="active" WHERE link_id=?')->execute([$linkId]);
 }
 
+// ── Issue #5 fix: DELETE the row on revoke so the UNIQUE KEY allows re-linking ──
+// Previously SET status="revoked" blocked new INSERT due to the unique constraint.
 function revokeLink(int $linkId): void {
-    getDB()->prepare('UPDATE account_links SET status="revoked" WHERE link_id=?')->execute([$linkId]);
+    getDB()->prepare('DELETE FROM account_links WHERE link_id=?')->execute([$linkId]);
 }
 
 function getLinksForElder(int $elderUserId): array {
@@ -292,9 +307,9 @@ function e(string $val): string {
 
 function riskBadge(float $probability): string {
     $level = $probability >= RISK_HIGH ? 'high' : ($probability >= RISK_MEDIUM ? 'medium' : 'low');
-    $map   = ['high' => ['label'=>'High Risk','class'=>'badge-danger'],
-              'medium'=>['label'=>'Medium Risk','class'=>'badge-warning'],
-              'low'  => ['label'=>'Low Risk','class'=>'badge-success']];
+    $map   = ['high'   => ['label' => 'High Risk',   'class' => 'badge-danger'],
+              'medium' => ['label' => 'Medium Risk',  'class' => 'badge-warning'],
+              'low'    => ['label' => 'Low Risk',     'class' => 'badge-success']];
     $b = $map[$level];
     return "<span class=\"badge {$b['class']}\">{$b['label']} (" . round($probability) . "%)</span>";
 }
@@ -303,10 +318,10 @@ function timeAgo(string $datetime): string {
     $now  = new DateTime();
     $then = new DateTime($datetime);
     $diff = $now->diff($then);
-    if ($diff->days > 30)  return $then->format('M j, Y');
-    if ($diff->days >= 1)  return $diff->days  . 'd ago';
-    if ($diff->h >= 1)     return $diff->h     . 'h ago';
-    if ($diff->i >= 1)     return $diff->i     . 'm ago';
+    if ($diff->days > 30) return $then->format('M j, Y');
+    if ($diff->days >= 1) return $diff->days . 'd ago';
+    if ($diff->h >= 1)    return $diff->h    . 'h ago';
+    if ($diff->i >= 1)    return $diff->i    . 'm ago';
     return 'just now';
 }
 
