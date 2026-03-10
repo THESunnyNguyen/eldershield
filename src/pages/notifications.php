@@ -5,9 +5,68 @@ require_once __DIR__ . '/../includes/helpers.php';
 
 requireLogin();
 $user          = currentUser();
-$notifications = getNotificationsForUser((int)$user['user_id']);
+$db            = getDB();
+$errors        = [];
+$success       = [];
 
-// Read/unread state is toggled individually via mark_notification.php.
+// ── Handle POST actions ───────────────────────────────────────
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!verifyCsrf($_POST['csrf_token'] ?? '')) {
+        $errors[] = 'Invalid form token.';
+    } else {
+        $action = $_POST['action'] ?? '';
+
+        // Delete a single notification (owner or admin)
+        if ($action === 'delete_notification') {
+            $nid = (int)($_POST['notification_id'] ?? 0);
+            if ($nid) {
+                if ($user['role'] === 'admin') {
+                    $db->prepare('DELETE FROM notifications WHERE notification_id = ?')->execute([$nid]);
+                } else {
+                    $db->prepare('DELETE FROM notifications WHERE notification_id = ? AND recipient_user_id = ?')
+                       ->execute([$nid, $user['user_id']]);
+                }
+                $success[] = 'Notification deleted.';
+            }
+        }
+
+        // Delete ALL notifications for current user
+        if ($action === 'delete_all') {
+            if ($user['role'] === 'admin') {
+                $db->exec('DELETE FROM notifications');
+            } else {
+                $db->prepare('DELETE FROM notifications WHERE recipient_user_id = ?')
+                   ->execute([$user['user_id']]);
+            }
+            $success[] = 'All notifications cleared.';
+        }
+
+		// Admin: broadcast a notification to all users
+        if ($action === 'broadcast' && $user['role'] === 'admin') {
+            $msgText   = trim($_POST['message_text'] ?? '');
+            $notifType = 'admin_action';
+            if (strlen($msgText) < 5) {
+                $errors[] = 'Message must be at least 5 characters.';
+            } else {
+                try {
+                    $allUsers = $db->query('SELECT user_id FROM users WHERE is_active = 1')->fetchAll();
+                    $ins = $db->prepare(
+                        'INSERT INTO notifications (recipient_user_id, incident_id, notification_type, message_text, is_read, created_at)
+                         VALUES (?, NULL, ?, ?, 0, NOW())'
+                    );
+                    foreach ($allUsers as $u) {
+                        $ins->execute([$u['user_id'], $notifType, $msgText]);
+                    }
+                    $success[] = 'Notification broadcast to ' . count($allUsers) . ' user(s).';
+                } catch (\Throwable $ex) {
+                    $errors[] = 'Broadcast failed: ' . $ex->getMessage();
+                }
+            }
+        }
+    }
+}
+
+$notifications = getNotificationsForUser((int)$user['user_id']);
 
 $pageTitle = 'Notifications';
 include __DIR__ . '/../includes/header.php';
@@ -23,24 +82,58 @@ include __DIR__ . '/../includes/header.php';
                 Stay updated with your latest scam alerts and account activity.
             </p>
         </div>
-        <?php if (!empty($notifications)): ?>
-        <button class="btn btn-primary" id="mark-all-read-btn">✔ Mark All as Read</button>
-        <?php endif; ?>
+        <div style="display:flex;gap:.6rem;flex-wrap:wrap;align-items:center;">
+            <?php if (!empty($notifications)): ?>
+                <button class="btn btn-secondary" id="mark-all-read-btn">✔ Mark All as Read</button>
+                <form method="POST" onsubmit="return confirm('Clear all notifications?')">
+                    <?= csrfField() ?>
+                    <input type="hidden" name="action" value="delete_all">
+                    <button type="submit" class="btn btn-outline-danger">🗑 Clear All</button>
+                </form>
+            <?php endif; ?>
+        </div>
     </div>
 
+    <?php foreach ($errors  as $e): ?><div class="alert alert-danger"><?= e($e) ?></div><?php endforeach; ?>
+    <?php foreach ($success as $s): ?><div class="alert alert-success"><?= e($s) ?></div><?php endforeach; ?>
+
+    <!-- ── ADMIN: Broadcast panel ──────────────────────────── -->
+    <?php if ($user['role'] === 'admin'): ?>
+    <div class="card broadcast-card">
+        <h2>📢 Send Notification to All Users</h2>
+        <p style="color:var(--color-muted);font-size:.925rem;margin-bottom:1rem;">
+            This message will be sent as an <strong>Admin Action</strong> notification to every active user.
+        </p>
+        <form method="POST">
+            <?= csrfField() ?>
+            <input type="hidden" name="action" value="broadcast">
+            <div class="form-group">
+                <label for="broadcast_msg">Message</label>
+                <textarea id="broadcast_msg" name="message_text" rows="3"
+                    placeholder="e.g. We've updated our privacy policy. Please review it in your account settings."
+                    required minlength="5"></textarea>
+            </div>
+            <button type="submit" class="btn btn-primary" onclick="return confirm('Send this notification to ALL active users?')">
+                📤 Broadcast to All Users
+            </button>
+        </form>
+    </div>
+    <?php endif; ?>
+
+    <!-- ── Notification table ──────────────────────────────── -->
     <?php if (empty($notifications)): ?>
         <div class="empty-state"><p>No notifications yet. You're all clear!</p></div>
     <?php else: ?>
 
-    <!-- Table layout matching screenshot structure -->
     <div class="card" style="padding:0;overflow:hidden;">
         <table class="data-table" id="notif-table">
             <thead>
                 <tr>
-                    <th style="width:55%">Notification</th>
+                    <th style="width:50%">Notification</th>
                     <th>Type</th>
                     <th>Time</th>
                     <th style="text-align:center">Status</th>
+                    <th style="text-align:center">Actions</th>
                 </tr>
             </thead>
             <tbody>
@@ -84,9 +177,11 @@ include __DIR__ . '/../includes/header.php';
                     <!-- Time + view link -->
                     <td>
                         <div><?= timeAgo($n['created_at']) ?></div>
+                        <?php if (!empty($n['incident_id'])): ?>
                         <a href="<?= APP_URL ?>/pages/incident_detail.php?id=<?= $n['incident_id'] ?>"
                            class="btn btn-sm" style="margin-top:.4rem"
                            onclick="event.stopPropagation()">View</a>
+                        <?php endif; ?>
                     </td>
 
                     <!-- Read/unread toggle -->
@@ -95,6 +190,19 @@ include __DIR__ . '/../includes/header.php';
                                 onclick="toggleRead(event, this)">
                             <?= $n['is_read'] ? 'read' : 'unread' ?>
                         </button>
+                    </td>
+
+                    <!-- Delete -->
+                    <td style="text-align:center">
+                        <form method="POST" class="notif-delete-form"
+                              onsubmit="return confirmDelete(event, this)">
+                            <?= csrfField() ?>
+                            <input type="hidden" name="action" value="delete_notification">
+                            <input type="hidden" name="notification_id" value="<?= (int)$n['notification_id'] ?>">
+                            <button type="submit" class="btn btn-sm btn-delete-notif" title="Delete notification">
+                                🗑
+                            </button>
+                        </form>
                     </td>
                 </tr>
             <?php endforeach; ?>
@@ -157,21 +265,43 @@ include __DIR__ . '/../includes/header.php';
     transition: background .15s, color .15s;
     white-space: nowrap;
 }
-.status-unread {
-    background: #dbeafe;
-    color: #1e40af;
+.status-unread { background: #dbeafe; color: #1e40af; }
+.status-unread:hover { background: #bfdbfe; }
+.status-read { background: #f3f4f6; color: #6b7280; }
+.status-read:hover { background: #e5e7eb; color: var(--color-text); }
+
+/* ── Delete button ─────────────────────────────────────── */
+.btn-delete-notif {
+    background: transparent;
+    color: var(--color-muted);
+    border: 1px solid transparent;
+    padding: .25rem .55rem;
+    font-size: 1rem;
+    line-height: 1;
+    border-radius: var(--radius);
+    transition: background .15s, color .15s, border-color .15s;
 }
-.status-unread:hover {
-    background: #bfdbfe;
+.btn-delete-notif:hover {
+    background: #fee2e2;
+    color: var(--color-danger);
+    border-color: #fca5a5;
 }
-.status-read {
-    background: #f3f4f6;
-    color: #6b7280;
+.notif-delete-form { display: inline; margin: 0; padding: 0; }
+
+/* ── Row exit animation ────────────────────────────────── */
+.notif-row.removing {
+    transition: opacity .3s, transform .3s;
+    opacity: 0;
+    transform: translateX(20px);
+    pointer-events: none;
 }
-.status-read:hover {
-    background: #e5e7eb;
-    color: var(--color-text);
+
+/* ── Broadcast card ────────────────────────────────────── */
+.broadcast-card {
+    border-left: 4px solid #7c3aed;
+    background: #faf5ff;
 }
+.broadcast-card h2 { color: #5b21b6; }
 </style>
 
 <script>
@@ -191,7 +321,6 @@ async function toggleRead(event, btn) {
         });
         if (!res.ok) throw new Error('Request failed');
 
-        // Update row state
         row.dataset.read = String(newRead);
         if (newRead === 1) {
             row.classList.replace('notif-row-unread', 'notif-row-read');
@@ -202,13 +331,24 @@ async function toggleRead(event, btn) {
             btn.classList.replace('status-read', 'status-unread');
             btn.textContent = 'unread';
         }
-
-        // Update navbar bell badge
         updateBadge(newRead === 1 ? -1 : 1);
-
     } catch (err) {
         console.error('Could not update notification:', err);
     }
+}
+
+// Animate row out, then submit the delete form
+function confirmDelete(event, form) {
+    event.preventDefault();
+    const row = form.closest('.notif-row');
+    const wasUnread = row.dataset.read === '0';
+
+    row.classList.add('removing');
+    setTimeout(() => {
+        if (wasUnread) updateBadge(-1);
+        form.submit();
+    }, 300);
+    return false;
 }
 
 // Mark all as read
@@ -233,7 +373,6 @@ document.getElementById('mark-all-read-btn')?.addEventListener('click', async ()
         btn.textContent = 'read';
         changed++;
     });
-
     updateBadge(-changed);
 });
 
@@ -241,8 +380,8 @@ function updateBadge(delta) {
     const badge = document.getElementById('notif-badge');
     if (!badge) return;
     let count = Math.max(0, (parseInt(badge.textContent) || 0) + delta);
-    badge.textContent    = count;
-    badge.style.display  = count > 0 ? '' : 'none';
+    badge.textContent   = count;
+    badge.style.display = count > 0 ? '' : 'none';
 }
 </script>
 

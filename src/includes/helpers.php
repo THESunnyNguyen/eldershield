@@ -209,10 +209,12 @@ function getNotificationsForUser(int $userId, bool $unreadOnly = false): array {
     $db    = getDB();
     $where = $unreadOnly ? 'AND n.is_read = 0' : '';
     $stmt  = $db->prepare(
-        "SELECT n.*, i.content as incident_content, u.full_name as elder_name
+        "SELECT n.*,
+                i.content   AS incident_content,
+                u.full_name AS elder_name
          FROM notifications n
-         JOIN incidents i ON n.incident_id = i.incident_id
-         JOIN users u ON i.user_id = u.user_id
+         LEFT JOIN incidents i ON n.incident_id = i.incident_id
+         LEFT JOIN users u     ON i.user_id = u.user_id
          WHERE n.recipient_user_id = ? {$where}
          ORDER BY n.created_at DESC
          LIMIT 50"
