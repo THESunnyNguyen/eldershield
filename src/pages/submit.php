@@ -59,6 +59,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             setFlash('success', 'Your report has been analyzed. See the results below.');
+            // 1. Save incident to DB immediately
+            $incidentId = createIncident((int)$user['user_id'], $content, $imagePath);
+
+            // 2. Fire Ollama in background — user is NOT kept waiting
+            analyzeIncidentAsync($incidentId, $content, $imagePath);
+
+            // 3. Redirect immediately — detail page will poll for results
+            setFlash('success', 'Your report has been submitted! Analysis is running and will appear shortly.');
             header('Location: ' . APP_URL . '/pages/incident_detail.php?id=' . $incidentId);
             exit;
         }
@@ -150,7 +158,7 @@ include __DIR__ . '/../includes/header.php';
 </div>
 
 <script>
-document.getElementById('screenshot')?.addEventListener('change', function(e) {
+document.getElementById('screenshot').addEventListener('change', function(e) {
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
@@ -171,9 +179,9 @@ function clearImage() {
     document.querySelector('.upload-label').classList.remove('hidden');
 }
 
-document.querySelector('form')?.addEventListener('submit', function() {
+document.querySelector('form').addEventListener('submit', function() {
     const btn = document.getElementById('submitBtn');
-    btn.textContent = '⏳ Analyzing... This may take a moment';
+    btn.textContent = '⏳ Submitting...';
     btn.disabled = true;
 });
 </script>

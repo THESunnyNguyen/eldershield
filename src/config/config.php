@@ -3,15 +3,14 @@
 // config/config.php  —  App-wide settings
 // ============================================================
 
-// ── AI Provider ──────────────────────────────────────────────
-define('OPENAI_API_KEY',    'sk-YOUR-OPENAI-KEY-HERE');   // Replace with your key
-define('OPENAI_MODEL',      'gpt-4o-mini');               // Cost-effective with vision
-define('OPENAI_MAX_TOKENS', 1000);
-
 // ── App ───────────────────────────────────────────────────────
 define('APP_NAME', 'ElderShield');
-define('APP_URL',  'http://localhost:8888/eldershield');   // MAMP default port
+define('APP_URL',  'http://localhost/eldershield/src');
 define('APP_ROOT', __DIR__ . '/..');
+
+// ── Ollama (local AI) ─────────────────────────────────────────
+define('OLLAMA_URL',   'http://localhost:11434');
+define('OLLAMA_MODEL', 'qwen3-vl:8b');   // BUG FIX: was qwen3-vl:8b which doesn't exist
 
 // ── Upload settings ───────────────────────────────────────────
 define('UPLOAD_DIR',          APP_ROOT . '/uploads/');
@@ -20,11 +19,11 @@ define('UPLOAD_MAX_MB',       10);
 define('ALLOWED_IMAGE_TYPES', ['image/jpeg','image/png','image/gif','image/webp']);
 
 // ── Session ───────────────────────────────────────────────────
-define('SESSION_LIFETIME', 3600); // 1 hour
+define('SESSION_LIFETIME', 3600);
 
 // ── Risk thresholds ───────────────────────────────────────────
-define('RISK_HIGH',   70);   // >= 70% → high risk, auto-notify caregivers
-define('RISK_MEDIUM', 40);   // >= 40% → medium risk
+define('RISK_HIGH',   70);
+define('RISK_MEDIUM', 40);
 
 // ── PHP error handling ────────────────────────────────────────
 ini_set('display_errors', 0);   // Never expose errors to the browser
@@ -41,7 +40,10 @@ if (!headers_sent()) {
     header("X-Frame-Options: SAMEORIGIN");           // Prevent clickjacking
     header("Referrer-Policy: strict-origin-when-cross-origin");
 }
+ini_set('display_errors', 0);
+ini_set('log_errors', 1);
+set_time_limit(0);
 
-if (session_status() === PHP_SESSION_NONE) {
+if (php_sapi_name() !== 'cli' && session_status() === PHP_SESSION_NONE) {
     session_start();
 }

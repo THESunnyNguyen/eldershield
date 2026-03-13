@@ -215,7 +215,7 @@ function getNotificationsForUser(int $userId, bool $unreadOnly = false): array {
     $where = $unreadOnly ? 'AND n.is_read = 0' : '';
     $stmt  = $db->prepare(
         "SELECT n.*,
-                i.content  AS incident_content,
+                i.content   AS incident_content,
                 u.full_name AS elder_name
          FROM notifications n
          LEFT JOIN incidents i ON n.incident_id = i.incident_id

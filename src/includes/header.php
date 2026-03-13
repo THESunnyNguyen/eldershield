@@ -59,8 +59,8 @@ if (isLoggedIn() && $user['role'] === 'caregiver') {
         <?php endif; ?>
 
         <li>
-            <a href="<?= APP_URL ?>/pages/notifications.php" class="notif-link">
-                🔔 <?= $unreadCount > 0 ? "<span class=\"badge-notif\">{$unreadCount}</span>" : '' ?>
+            <a href="<?= APP_URL ?>/pages/notifications.php" class="notif-link" id="notif-bell">
+                🔔 <span id="notif-badge" class="badge-notif" <?= $unreadCount > 0 ? '' : 'style="display:none"' ?>><?= $unreadCount ?></span>
             </a>
         </li>
 
