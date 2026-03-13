@@ -1,7 +1,9 @@
 <?php
-// pages/admin_users.php — User management + caregiver linking
+// pages/admin_users.php — User management + caregiver linking + billing overview
+require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/helpers.php';
+require_once __DIR__ . '/../includes/billing_helper.php';
 
 requireLogin();
 $user = currentUser();
@@ -13,12 +15,13 @@ if (!in_array($user['role'], ['admin','caregiver'])) {
     exit;
 }
 
-$errors   = [];
-$success  = [];
+$errors  = [];
+$success = [];
 
 // ── Handle POST actions ───────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!verifyCsrf($_POST['csrf_token'] ?? '')) {
+        http_response_code(403);
         $errors[] = 'Invalid form token.';
     } else {
         $action = $_POST['action'] ?? '';
@@ -44,10 +47,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         // Caregiver/Admin: link caregiver to elder
         if ($action === 'link') {
-            $elderEmail    = trim($_POST['elder_email'] ?? '');
-            $caregiverId   = ($user['role'] === 'admin')
-                               ? (int)($_POST['caregiver_id'] ?? $user['user_id'])
-                               : (int)$user['user_id'];
+            $elderEmail  = trim($_POST['elder_email'] ?? '');
+            $caregiverId = ($user['role'] === 'admin')
+                             ? (int)($_POST['caregiver_id'] ?? $user['user_id'])
+                             : (int)$user['user_id'];
 
             $elderStmt = $db->prepare('SELECT user_id FROM users WHERE email=? AND role="elder" AND is_active=1');
             $elderStmt->execute([$elderEmail]);
@@ -86,10 +89,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// Fetch data
+// ── Fetch data ────────────────────────────────────────────────
 if ($user['role'] === 'admin') {
-    $users = $db->query('SELECT * FROM users ORDER BY created_at DESC')->fetchAll();
-    $links = $db->query(
+    $users      = $db->query('SELECT * FROM users ORDER BY created_at DESC')->fetchAll();
+    $links      = $db->query(
         'SELECT al.*, e.full_name AS elder_name, e.email AS elder_email,
                 c.full_name AS caregiver_name
          FROM account_links al
@@ -97,17 +100,19 @@ if ($user['role'] === 'admin') {
          JOIN users c ON al.caregiver_user_id = c.user_id
          ORDER BY al.created_at DESC'
     )->fetchAll();
-    $caregivers = array_filter($users, fn($u) => $u['role'] === 'caregiver');
+    $caregivers    = array_filter($users, fn($u) => $u['role'] === 'caregiver');
+    $billingOverview = getAdminBillingOverview();
 } else {
-    // Caregiver: show their own links
     $stmt = $db->prepare(
         'SELECT al.*, u.full_name AS elder_name, u.email AS elder_email
          FROM account_links al JOIN users u ON al.elder_user_id = u.user_id
-         WHERE al.caregiver_user_id = ?'
+         WHERE al.caregiver_user_id = ?
+         ORDER BY al.created_at DESC'
     );
     $stmt->execute([$user['user_id']]);
     $links = $stmt->fetchAll();
     $users = [];
+    $billingOverview = [];
 }
 
 $pageTitle = 'User Management';
@@ -120,7 +125,7 @@ include __DIR__ . '/../includes/header.php';
     <?php foreach ($errors  as $e): ?><div class="alert alert-danger"><?= e($e) ?></div><?php endforeach; ?>
     <?php foreach ($success as $s): ?><div class="alert alert-success"><?= e($s) ?></div><?php endforeach; ?>
 
-    <!-- ── LINK NEW ELDER ───────────────────────────────────────── -->
+    <!-- ── LINK NEW ELDER ────────────────────────────────────────── -->
     <div class="card">
         <h2>Link an Elder Account</h2>
         <form method="POST">
@@ -140,7 +145,7 @@ include __DIR__ . '/../includes/header.php';
         </form>
     </div>
 
-    <!-- ── ACCOUNT LINKS ─────────────────────────────────────────── -->
+    <!-- ── ACCOUNT LINKS ──────────────────────────────────────────── -->
     <?php if (!empty($links)): ?>
     <div class="card">
         <h2>Caregiver–Elder Relationships</h2>
@@ -151,6 +156,7 @@ include __DIR__ . '/../includes/header.php';
                     <?php if ($user['role']==='admin'): ?><th>Caregiver</th><?php endif; ?>
                     <th>Type</th>
                     <th>Status</th>
+                    <th>Linked</th>
                     <th>Actions</th>
                 </tr>
             </thead>
@@ -161,6 +167,7 @@ include __DIR__ . '/../includes/header.php';
                     <?php if ($user['role']==='admin'): ?><td><?= e($l['caregiver_name']) ?></td><?php endif; ?>
                     <td><?= e($l['relationship_type']) ?></td>
                     <td><span class="status-badge status-<?= e($l['status']) ?>"><?= e(ucfirst($l['status'])) ?></span></td>
+                    <td><?= $l['linked_at'] ? e(date('M j, Y', strtotime($l['linked_at']))) : '—' ?></td>
                     <td>
                         <?php if ($l['status'] === 'pending'): ?>
                             <form method="POST" style="display:inline">
@@ -170,13 +177,15 @@ include __DIR__ . '/../includes/header.php';
                                 <button class="btn btn-sm btn-success">Approve</button>
                             </form>
                         <?php endif; ?>
-                        <?php if ($l['status'] !== 'revoked'): ?>
+                        <?php if ($l['status'] === 'active'): ?>
                             <form method="POST" style="display:inline">
                                 <?= csrfField() ?>
                                 <input type="hidden" name="action" value="revoke_link">
                                 <input type="hidden" name="link_id" value="<?= $l['link_id'] ?>">
                                 <button class="btn btn-sm btn-danger"
-                                        onclick="return confirm('Revoke this relationship?')">Revoke</button>
+                                        onclick="return confirm('Revoke this relationship? Prorated billing will apply.')">
+                                    Revoke
+                                </button>
                             </form>
                         <?php endif; ?>
                     </td>
@@ -187,7 +196,49 @@ include __DIR__ . '/../includes/header.php';
     </div>
     <?php endif; ?>
 
-    <!-- ── ALL USERS (admin only) ────────────────────────────────── -->
+    <!-- ── ADMIN: BILLING OVERVIEW ───────────────────────────────── -->
+    <?php if ($user['role'] === 'admin' && !empty($billingOverview)): ?>
+    <div class="card">
+        <div class="page-header" style="margin-bottom:1rem;">
+            <h2>Caregiver Billing Overview</h2>
+        </div>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Caregiver</th>
+                    <th>Active Elders</th>
+                    <th>Monthly Charge</th>
+                    <th>Last Billed</th>
+                    <th>Last Status</th>
+                </tr>
+            </thead>
+            <tbody>
+            <?php foreach ($billingOverview as $row): ?>
+                <tr class="<?= $row['last_status'] === 'failed' ? 'row-danger' : '' ?>">
+                    <td>
+                        <?= e($row['full_name']) ?><br>
+                        <small style="color:var(--color-muted)"><?= e($row['email']) ?></small>
+                    </td>
+                    <td><?= (int)$row['active_elders'] ?></td>
+                    <td><?= formatCents((int)$row['monthly_cents']) ?></td>
+                    <td><?= $row['last_billed'] ? e(formatBillingMonth($row['last_billed'])) : 'Never' ?></td>
+                    <td>
+                        <?php if ($row['last_status']): ?>
+                        <span class="status-badge status-<?= e($row['last_status']) ?>">
+                            <?= e(ucfirst($row['last_status'])) ?>
+                        </span>
+                        <?php else: ?>
+                            <span style="color:var(--color-muted)">—</span>
+                        <?php endif; ?>
+                    </td>
+                </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+    <?php endif; ?>
+
+    <!-- ── ALL USERS (admin only) ─────────────────────────────────── -->
     <?php if ($user['role'] === 'admin' && !empty($users)): ?>
     <div class="card">
         <h2>All Users (<?= count($users) ?>)</h2>

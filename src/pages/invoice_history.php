@@ -1,0 +1,192 @@
+<?php
+// ============================================================
+// pages/invoice_history.php — Caregiver invoice history
+// ============================================================
+require_once __DIR__ . '/../config/config.php';
+require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/../includes/helpers.php';
+require_once __DIR__ . '/../includes/billing_helper.php';
+
+requireLogin();
+requireRole('caregiver'); // Elders and admins have no invoices
+
+$user    = currentUser();
+$flash   = getFlash();
+$errors  = [];
+
+// ── Handle retry payment ──────────────────────────────────────
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!verifyCsrf($_POST['csrf_token'] ?? '')) {
+        http_response_code(403);
+        $errors[] = 'Invalid request. Please try again.';
+    } else {
+        $invoiceId = (int)($_POST['invoice_id'] ?? 0);
+        if ($invoiceId) {
+            $ok = retryPayment($invoiceId, (int)$user['user_id']);
+            setFlash($ok ? 'success' : 'danger',
+                     $ok ? 'Payment successful!'
+                         : 'Payment failed again. Please try later.');
+            header('Location: ' . APP_URL . '/pages/invoice_history.php');
+            exit;
+        }
+    }
+}
+
+// ── Load invoices (always scoped to session user — no URL param) ──
+$invoices   = getInvoiceHistory((int)$user['user_id']);
+$failedInv  = getFailedInvoice((int)$user['user_id']);
+$restricted = caregiverAccessRestricted((int)$user['user_id']);
+
+// ── Detail view: load single invoice line items if requested ──
+$detail = null;
+if (isset($_GET['invoice_id'])) {
+    $detail = getInvoiceWithLines((int)$_GET['invoice_id'], (int)$user['user_id']);
+    // getInvoiceWithLines() returns null if it doesn't belong to this user
+}
+
+$pageTitle = 'Invoice History';
+require_once __DIR__ . '/../includes/header.php';
+?>
+
+<div class="page-container">
+    <div class="page-header">
+        <h1>Invoice History</h1>
+        <a href="<?= APP_URL ?>/pages/billing.php" class="btn btn-outline btn-sm">← Billing Summary</a>
+    </div>
+
+    <?php if ($flash): ?>
+        <div class="alert alert-<?= e($flash['type']) ?>"><?= e($flash['message']) ?></div>
+    <?php endif; ?>
+    <?php foreach ($errors as $err): ?>
+        <div class="alert alert-danger"><?= e($err) ?></div>
+    <?php endforeach; ?>
+
+    <?php if ($restricted && $failedInv): ?>
+    <div class="alert alert-danger billing-alert">
+        <strong>⚠️ Payment Failed</strong> —
+        Your <?= e(formatBillingMonth($failedInv['billing_month'])) ?> invoice of
+        <strong><?= e(formatCents((int)$failedInv['amount_cents'])) ?></strong> is unpaid.
+        <form method="POST" style="display:inline; margin-left:.75rem;">
+            <?= csrfField() ?>
+            <input type="hidden" name="invoice_id" value="<?= (int)$failedInv['invoice_id'] ?>">
+            <button type="submit" class="btn btn-sm btn-danger">Retry Payment</button>
+        </form>
+    </div>
+    <?php endif; ?>
+
+    <?php if ($detail): ?>
+    <!-- ── INVOICE DETAIL VIEW ─────────────────────────────────── -->
+    <div class="card">
+        <div class="page-header" style="margin-bottom:1rem;">
+            <h2>Invoice — <?= e(formatBillingMonth($detail['billing_month'])) ?></h2>
+            <span class="status-badge status-<?= e($detail['status']) ?>">
+                <?= e(ucfirst($detail['status'])) ?>
+            </span>
+        </div>
+
+        <table class="data-table" style="margin-bottom:1.5rem;">
+            <thead>
+                <tr>
+                    <th>Elder</th>
+                    <th>Days Active</th>
+                    <th>Days in Month</th>
+                    <th>Amount</th>
+                </tr>
+            </thead>
+            <tbody>
+            <?php foreach ($detail['lines'] as $line): ?>
+                <tr>
+                    <td><?= e($line['elder_name']) ?></td>
+                    <td><?= (int)$line['days_active'] ?></td>
+                    <td><?= (int)$line['days_in_month'] ?></td>
+                    <td><?= e(formatCents((int)$line['amount_cents'])) ?></td>
+                </tr>
+            <?php endforeach; ?>
+            </tbody>
+            <tfoot>
+                <tr>
+                    <td colspan="3" style="font-weight:700; text-align:right;">Total</td>
+                    <td style="font-weight:700;"><?= e(formatCents((int)$detail['amount_cents'])) ?></td>
+                </tr>
+            </tfoot>
+        </table>
+
+        <div style="color:var(--color-muted); font-size:.9rem;">
+            <?php if ($detail['paid_at']): ?>
+                Paid on <?= e(date('M j, Y \a\t g:i A', strtotime($detail['paid_at']))) ?>
+                <?php if ($detail['payment_method']): ?>
+                    via <?= e($detail['payment_method']) ?>
+                <?php endif; ?>
+            <?php elseif ($detail['status'] === 'failed'): ?>
+                Payment failed.
+                <form method="POST" style="display:inline; margin-left:.5rem;">
+                    <?= csrfField() ?>
+                    <input type="hidden" name="invoice_id" value="<?= (int)$detail['invoice_id'] ?>">
+                    <button type="submit" class="btn btn-sm btn-danger">Retry Payment</button>
+                </form>
+            <?php else: ?>
+                Payment pending.
+            <?php endif; ?>
+        </div>
+    </div>
+    <a href="<?= APP_URL ?>/pages/invoice_history.php" class="btn btn-outline btn-sm"
+       style="margin-bottom:1.5rem;">← All Invoices</a>
+
+    <?php endif; ?>
+
+    <!-- ── INVOICE LIST ─────────────────────────────────────────── -->
+    <?php if (empty($invoices)): ?>
+    <div class="empty-state">
+        <h2>No Invoices Yet</h2>
+        <p>Your first invoice will be generated automatically on the 1st of next month.</p>
+    </div>
+    <?php else: ?>
+    <div class="card">
+        <h2>All Invoices (<?= count($invoices) ?>)</h2>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Month</th>
+                    <th>Elders</th>
+                    <th>Amount</th>
+                    <th>Status</th>
+                    <th>Paid On</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+            <?php foreach ($invoices as $inv): ?>
+                <tr class="<?= $inv['status'] === 'failed' ? 'row-danger' : '' ?>">
+                    <td><?= e(formatBillingMonth($inv['billing_month'])) ?></td>
+                    <td><?= (int)$inv['elder_count'] ?></td>
+                    <td><?= e(formatCents((int)$inv['amount_cents'])) ?></td>
+                    <td>
+                        <span class="status-badge status-<?= e($inv['status']) ?>">
+                            <?= e(ucfirst($inv['status'])) ?>
+                        </span>
+                    </td>
+                    <td>
+                        <?= $inv['paid_at']
+                            ? e(date('M j, Y', strtotime($inv['paid_at'])))
+                            : '—' ?>
+                    </td>
+                    <td>
+                        <a href="?invoice_id=<?= (int)$inv['invoice_id'] ?>"
+                           class="btn btn-sm btn-outline">View</a>
+                        <?php if ($inv['status'] === 'failed'): ?>
+                            <form method="POST" style="display:inline">
+                                <?= csrfField() ?>
+                                <input type="hidden" name="invoice_id" value="<?= (int)$inv['invoice_id'] ?>">
+                                <button type="submit" class="btn btn-sm btn-danger">Retry</button>
+                            </form>
+                        <?php endif; ?>
+                    </td>
+                </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+    <?php endif; ?>
+</div>
+
+<?php require_once __DIR__ . '/../includes/footer.php'; ?>
