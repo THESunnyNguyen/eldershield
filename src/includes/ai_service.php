@@ -1,6 +1,6 @@
 <?php
 // ============================================================
-// includes/ai_service.php  —  Ollama llama3.2-vision (local)
+// includes/ai_service.php  —  Ollama (Windows MAMP)
 // ============================================================
 
 require_once __DIR__ . '/../config/config.php';
@@ -16,30 +16,30 @@ function analyzeIncident(string $text, ?string $imagePath = null): array {
         . '"manipulation_tactics":["<tactic>"],'
         . '"explanation_simple":"<2-3 plain sentences a senior would understand>",'
         . '"recommended_action":"<2-3 clear action steps>"}'
-        . 'You must respond with a single JSON object only. '
-        . 'Do not write any words, explanation, or markdown before or after the JSON. '
-        . 'Do not use code fences. Your entire response must be parseable by json_decode(). '
-        . 'Start your response with { and end with }.';
+        . ' You must respond with a single JSON object only.'
+        . ' Do not write any words, explanation, or markdown before or after the JSON.'
+        . ' Do not use code fences. Your entire response must be parseable by json_decode().'
+        . ' Start your response with { and end with }.';
 
-if ($imagePath && file_exists($imagePath)) {
-    $imageData = base64_encode(file_get_contents($imagePath));
-    $messages  = [
-        ['role' => 'system', 'content' => $systemPrompt],
-        [
-            'role'    => 'user',
-            'content' => "Analyze this content for scams:\n\n" . $text,
-            'images'  => [$imageData],   // gemma3 format — raw base64 in images array
-        ]
-    ];
-} else {
-    $messages = [
-        ['role' => 'system', 'content' => $systemPrompt],
-        ['role' => 'user',   'content' => "Analyze this content for scams:\n\n" . $text]
-    ];
-}
+    if ($imagePath && file_exists($imagePath)) {
+        $imageData = base64_encode(file_get_contents($imagePath));
+        $messages  = [
+            ['role' => 'system', 'content' => $systemPrompt],
+            [
+                'role'    => 'user',
+                'content' => "Analyze this content for scams:\n\n" . $text,
+                'images'  => [$imageData],
+            ]
+        ];
+    } else {
+        $messages = [
+            ['role' => 'system', 'content' => $systemPrompt],
+            ['role' => 'user',   'content' => "Analyze this content for scams:\n\n" . $text]
+        ];
+    }
 
     $payload = json_encode([
-        'model'    => 'gemma3:4b',
+        'model'    => OLLAMA_MODEL,
         'messages' => $messages,
         'stream'   => false,
         'options'  => [
@@ -48,7 +48,7 @@ if ($imagePath && file_exists($imagePath)) {
         ],
     ]);
 
-    $ch = curl_init('http://localhost:11434/api/chat');
+    $ch = curl_init(OLLAMA_URL . '/api/chat');
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_POST           => true,
@@ -84,22 +84,24 @@ if ($imagePath && file_exists($imagePath)) {
 
 // ── Fire analysis in background so Apache does not freeze ────
 function analyzeIncidentAsync(int $incidentId, string $text, ?string $imagePath = null): void {
-    $phpBinaries = glob('/Applications/MAMP/bin/php/php*/bin/php');
-    $phpBin      = !empty($phpBinaries) ? end($phpBinaries) : '/usr/bin/php';
-
-    $scriptPath = APP_ROOT . '/api/run_analysis.php';
+    $phpBin     = 'C:\\MAMP\\bin\\php\\php8.3.1\\php.exe';
+    $scriptPath = str_replace('/', DIRECTORY_SEPARATOR, APP_ROOT . '/api/run_analysis.php');
     $imageArg   = ($imagePath && $imagePath !== '') ? escapeshellarg($imagePath) : '""';
 
+    // Write text to temp file to avoid shell escaping issues on Windows
+    $tmpFile = tempnam(sys_get_temp_dir(), 'es_') . '.txt';
+    file_put_contents($tmpFile, $text);
+
     $cmd = sprintf(
-        '%s %s %s %s %s > /dev/null 2>&1 &',
-        escapeshellarg($phpBin),
-        escapeshellarg($scriptPath),
-        escapeshellarg((string)$incidentId),
-        escapeshellarg($text),
+        'start /B "" "%s" "%s" "%s" "%s" %s',
+        $phpBin,
+        $scriptPath,
+        (string)$incidentId,
+        $tmpFile,
         $imageArg
     );
 
-    exec($cmd);
+    pclose(popen($cmd, 'r'));
 }
 
 // ── Parse AI JSON response ────────────────────────────────────

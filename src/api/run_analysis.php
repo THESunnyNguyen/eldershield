@@ -1,7 +1,4 @@
 <?php
-// api/run_analysis.php — Background CLI worker for Ollama analysis
-// Launched by analyzeIncidentAsync() — never called directly by browser
-
 if (php_sapi_name() !== 'cli') {
     http_response_code(403);
     exit('CLI only');
@@ -13,11 +10,18 @@ require_once __DIR__ . '/../includes/ai_service.php';
 require_once __DIR__ . '/../includes/helpers.php';
 
 $incidentId = (int)($argv[1] ?? 0);
-$text       = $argv[2] ?? '';
+$tmpFile    = $argv[2] ?? '';
+$text       = ($tmpFile && file_exists($tmpFile)) ? file_get_contents($tmpFile) : '';
 $imagePath  = (isset($argv[3]) && $argv[3] !== '""' && $argv[3] !== '') ? $argv[3] : null;
 
+// Delete temp file immediately after reading
+if ($tmpFile && file_exists($tmpFile)) {
+    @unlink($tmpFile);
+}
+
+// ← YES keep this
 if (!$incidentId || !$text) {
-    error_log('[ElderShield] run_analysis.php called with missing args');
+    error_log('[ElderShield] run_analysis.php missing args. incidentId=' . $incidentId . ' textLen=' . strlen($text));
     exit(1);
 }
 

@@ -4,7 +4,7 @@
 // ============================================================
 
 define('DB_HOST', 'localhost');
-define('DB_PORT', '8889');          // MAMP default MySQL port (use 3306 for non-MAMP)
+define('DB_PORT', '3306');          // MAMP default MySQL port (use 3306 for non-MAMP)
 define('DB_NAME', 'eldershield');
 define('DB_USER', 'root');
 define('DB_PASS', 'root');          // MAMP default — change for production
