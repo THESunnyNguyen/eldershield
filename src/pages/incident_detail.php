@@ -20,8 +20,9 @@ if (!$incident) {
     exit;
 }
 
-// Access control: elder can only see their own; caregiver sees linked elders; admin sees all
 $db = getDB();
+
+// Access control
 if ($user['role'] === 'elder' && $incident['user_id'] != $user['user_id']) {
     header('Location: ' . APP_URL . '/pages/dashboard.php');
     exit;
@@ -38,7 +39,7 @@ if ($user['role'] === 'caregiver') {
     }
 }
 
-// Handle admin status update
+// Handle status update (admin/caregiver)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array($user['role'], ['admin','caregiver'])) {
     if (!verifyCsrf($_POST['csrf_token'] ?? '')) {
         setFlash('danger', 'Invalid form token.');
@@ -53,11 +54,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array($user['role'], ['admin','c
     exit;
 }
 
-$probability  = (float)($incident['scam_probability'] ?? 0);
-$riskLevel    = getRiskLevel($probability);
-$tactics      = json_decode($incident['manipulation_tactics'] ?? '[]', true) ?: [];
+$analysisReady = ($incident['scam_probability'] !== null);
+$probability   = (float)($incident['scam_probability'] ?? 0);
+$riskLevel     = getRiskLevel($probability);
+$tactics       = json_decode($incident['manipulation_tactics'] ?? '[]', true) ?: [];
 
-// Get the owner's name
 $ownerStmt = $db->prepare('SELECT full_name FROM users WHERE user_id=?');
 $ownerStmt->execute([$incident['user_id']]);
 $ownerName = $ownerStmt->fetchColumn();
@@ -79,8 +80,8 @@ include __DIR__ . '/../includes/header.php';
         </div>
     </div>
 
-    <?php if ($incident['scam_probability'] !== null): ?>
-    <!-- ── AI RESULT CARD ─────────────────────────────────────── -->
+    <?php if ($analysisReady): ?>
+    <!-- ── AI RESULT ─────────────────────────────────────────── -->
     <div class="result-card result-<?= $riskLevel ?>">
         <div class="result-score-area">
             <div class="risk-gauge">
@@ -112,7 +113,7 @@ include __DIR__ . '/../includes/header.php';
                 <p class="explanation-text"><?= e($incident['explanation_simple'] ?? '') ?></p>
             </div>
 
-            <div class="result-section result-actions-section">
+            <div class="result-section">
                 <h3>✅ What You Should Do</h3>
                 <div class="action-box">
                     <?= nl2br(e($incident['recommended_action'] ?? '')) ?>
@@ -120,11 +121,18 @@ include __DIR__ . '/../includes/header.php';
             </div>
         </div>
     </div>
+
     <?php else: ?>
-    <div class="alert alert-info">Analysis is still being processed. Please refresh in a moment.</div>
+    <!-- ── PENDING — auto-refresh every 5 seconds ────────────── -->
+    <div class="alert alert-info analyzing-banner">
+        <span class="analyzing-spinner">⏳</span>
+        <strong>Analysis in progress...</strong>
+        Your report has been received and our AI is analyzing it now.
+        This page will update automatically — no need to do anything.
+    </div>
     <?php endif; ?>
 
-    <!-- ── ORIGINAL SUBMISSION ────────────────────────────────── -->
+    <!-- ── ORIGINAL SUBMISSION ───────────────────────────────── -->
     <div class="submission-card">
         <h2>Original Submission</h2>
         <div class="submission-content">
@@ -170,7 +178,7 @@ include __DIR__ . '/../includes/header.php';
     </div>
     <?php endif; ?>
 
-    <!-- ── ELDER DELETE OWN REPORT ───────────────────────────── -->
+    <!-- ── ELDER DELETE ───────────────────────────────────────── -->
     <?php if ($user['role'] === 'elder' && $incident['user_id'] == $user['user_id']): ?>
     <div class="elder-controls">
         <a href="<?= APP_URL ?>/api/delete_incident.php?id=<?= $incidentId ?>&csrf=<?= urlencode(csrfToken()) ?>"
@@ -182,5 +190,12 @@ include __DIR__ . '/../includes/header.php';
     <?php endif; ?>
 
 </div>
+
+<?php if (!$analysisReady): ?>
+<script>
+// Auto-refresh every 5 seconds until analysis is ready
+setTimeout(function() { window.location.reload(); }, 5000);
+</script>
+<?php endif; ?>
 
 <?php include __DIR__ . '/../includes/footer.php'; ?>

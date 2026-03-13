@@ -1,5 +1,5 @@
 <?php
-// api/reanalyze.php — Admin re-runs AI on an existing incident
+// api/reanalyze.php — Admin re-runs AI on an existing incident (async)
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/helpers.php';
 require_once __DIR__ . '/../includes/ai_service.php';
@@ -7,7 +7,6 @@ require_once __DIR__ . '/../includes/ai_service.php';
 requireLogin();
 requireRole('admin');
 
-$user       = currentUser();
 $incidentId = (int)($_POST['incident_id'] ?? 0);
 $csrfToken  = $_POST['csrf_token'] ?? '';
 
@@ -24,14 +23,14 @@ if (!$incident) {
     exit;
 }
 
-// Delete old analysis
+// Delete old analysis so detail page shows "pending" state
 $db = getDB();
 $db->prepare('DELETE FROM analysis WHERE incident_id=?')->execute([$incidentId]);
+$db->prepare('UPDATE incidents SET status="pending" WHERE incident_id=?')->execute([$incidentId]);
 
-// Re-run AI
-$aiResult = analyzeIncident($incident['content'], $incident['image_path'] ?: null);
-saveAnalysis($incidentId, $aiResult);
+// Fire background analysis
+analyzeIncidentAsync($incidentId, $incident['content'], $incident['image_path'] ?: null);
 
-setFlash('success', 'AI analysis re-run successfully.');
+setFlash('success', 'Re-analysis started. Results will appear shortly.');
 header('Location: ' . APP_URL . '/pages/incident_detail.php?id=' . $incidentId);
 exit;

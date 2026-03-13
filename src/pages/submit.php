@@ -9,7 +9,6 @@ requireRole('elder');
 
 $user   = currentUser();
 $errors = [];
-$result = null;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!verifyCsrf($_POST['csrf_token'] ?? '')) {
@@ -31,27 +30,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         if (!$errors) {
-            // 1. Save incident to DB
+            // 1. Save incident to DB immediately
             $incidentId = createIncident((int)$user['user_id'], $content, $imagePath);
 
-            // 2. Run AI analysis
-            $aiResult = analyzeIncident($content, $imagePath);
+            // 2. Fire Ollama in background — user is NOT kept waiting
+            analyzeIncidentAsync($incidentId, $content, $imagePath);
 
-            // 3. Save analysis
-            saveAnalysis($incidentId, $aiResult);
-
-            // 4. Auto-notify caregivers if medium/high risk
-            if ($aiResult['scam_probability'] >= RISK_MEDIUM) {
-                notifyCaregivers(
-                    $incidentId,
-                    (int)$user['user_id'],
-                    (int)$aiResult['scam_probability'],
-                    $aiResult['scam_category']
-                );
-            }
-
-            // Redirect to detail page so they can read results
-            setFlash('success', 'Your report has been analyzed. See the results below.');
+            // 3. Redirect immediately — detail page will poll for results
+            setFlash('success', 'Your report has been submitted! Analysis is running and will appear shortly.');
             header('Location: ' . APP_URL . '/pages/incident_detail.php?id=' . $incidentId);
             exit;
         }
@@ -109,7 +95,6 @@ include __DIR__ . '/../includes/header.php';
         </form>
     </div>
 
-    <!-- Quick tips sidebar -->
     <div class="tips-card">
         <h3>⚠️ Common Scam Warning Signs</h3>
         <ul>
@@ -126,7 +111,6 @@ include __DIR__ . '/../includes/header.php';
 </div>
 
 <script>
-// Image preview before upload
 document.getElementById('screenshot').addEventListener('change', function(e) {
     const file = e.target.files[0];
     if (!file) return;
@@ -147,10 +131,9 @@ function clearImage() {
     document.querySelector('.upload-label').classList.remove('hidden');
 }
 
-// Loading state on submit
 document.querySelector('form').addEventListener('submit', function() {
     const btn = document.getElementById('submitBtn');
-    btn.textContent = '⏳ Analyzing... This may take a moment';
+    btn.textContent = '⏳ Submitting...';
     btn.disabled = true;
 });
 </script>
