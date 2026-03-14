@@ -1,5 +1,7 @@
 <?php
 // pages/incident_detail.php — Full AI analysis result view
+// Supports: elder edit content, elder resolve, admin/caregiver status update,
+//           admin override category, admin delete analysis
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/helpers.php';
 require_once __DIR__ . '/../includes/ai_service.php';
@@ -39,19 +41,39 @@ if ($user['role'] === 'caregiver') {
     }
 }
 
-// Handle POST actions (admin/caregiver)
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array($user['role'], ['admin','caregiver'])) {
+// Handle POST actions
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!verifyCsrf($_POST['csrf_token'] ?? '')) {
         setFlash('danger', 'Invalid form token.');
     } else {
-        $action = $_POST['action'] ?? 'update_status';
+        $action = $_POST['action'] ?? '';
 
-        // Update incident status
-        if ($action === 'update_status') {
+        // Admin/Caregiver: update incident status
+        if ($action === 'update_status' && in_array($user['role'], ['admin','caregiver'])) {
             $newStatus = $_POST['status'] ?? '';
             if ($newStatus) {
                 updateIncidentStatus($incidentId, $newStatus);
                 setFlash('success', 'Status updated.');
+            }
+        }
+
+        // Elder: resolve own incident (mark as reviewed or dismissed)
+        if ($action === 'elder_resolve' && $user['role'] === 'elder' && $incident['user_id'] == $user['user_id']) {
+            $newStatus = $_POST['status'] ?? '';
+            if (in_array($newStatus, ['reviewed','dismissed'], true)) {
+                updateIncidentStatus($incidentId, $newStatus);
+                setFlash('success', 'Report marked as ' . $newStatus . '.');
+            }
+        }
+
+        // Elder: edit incident content
+        if ($action === 'edit_content' && $user['role'] === 'elder' && $incident['user_id'] == $user['user_id']) {
+            $newContent = trim($_POST['content'] ?? '');
+            if (strlen($newContent) < 10) {
+                setFlash('danger', 'Content must be at least 10 characters.');
+            } else {
+                updateIncidentContent($incidentId, (int)$user['user_id'], $user['role'], $newContent);
+                setFlash('success', 'Report updated successfully.');
             }
         }
 
@@ -84,6 +106,11 @@ $tactics       = json_decode($incident['manipulation_tactics'] ?? '[]', true) ?:
 $ownerStmt = $db->prepare('SELECT full_name FROM users WHERE user_id=?');
 $ownerStmt->execute([$incident['user_id']]);
 $ownerName = $ownerStmt->fetchColumn();
+
+// Check if elder is in edit mode
+$editMode = isset($_GET['edit']) && $_GET['edit'] === '1'
+            && $user['role'] === 'elder'
+            && $incident['user_id'] == $user['user_id'];
 
 $pageTitle = 'Incident #' . $incidentId;
 include __DIR__ . '/../includes/header.php';
@@ -150,21 +177,43 @@ include __DIR__ . '/../includes/header.php';
     </div>
 
     <?php else: ?>
-    <!-- ── PENDING — auto-refresh every 5 seconds ────────────── -->
     <div class="alert alert-info analyzing-banner">
         <span class="analyzing-spinner">&#9203;</span>
         <strong>Analysis in progress...</strong>
         Your report has been received and our AI is analyzing it now.
-        This page will update automatically — no need to do anything.
+        This page will update automatically.
     </div>
     <?php endif; ?>
 
-    <!-- ── ORIGINAL SUBMISSION ───────────────────────────────── -->
+    <!-- ── ORIGINAL SUBMISSION (with edit support for elder) ── -->
     <div class="submission-card">
-        <h2>Original Submission</h2>
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <h2>Original Submission</h2>
+            <?php if ($user['role'] === 'elder' && $incident['user_id'] == $user['user_id'] && !$editMode): ?>
+                <a href="?id=<?= $incidentId ?>&edit=1" class="btn btn-sm btn-secondary">&#9998; Edit</a>
+            <?php endif; ?>
+        </div>
+
+        <?php if ($editMode): ?>
+        <!-- Elder edit form -->
+        <form method="POST" action="">
+            <?= csrfField() ?>
+            <input type="hidden" name="action" value="edit_content">
+            <div class="form-group">
+                <label for="content">Update your report:</label>
+                <textarea id="content" name="content" rows="7" required minlength="10"><?= e($incident['content']) ?></textarea>
+                <small>Minimum 10 characters. Add new details or correct any mistakes.</small>
+            </div>
+            <div style="display:flex; gap:.5rem;">
+                <button type="submit" class="btn btn-primary">Save Changes</button>
+                <a href="?id=<?= $incidentId ?>" class="btn btn-secondary">Cancel</a>
+            </div>
+        </form>
+        <?php else: ?>
         <div class="submission-content">
             <?= nl2br(e($incident['content'])) ?>
         </div>
+        <?php endif; ?>
 
         <?php if ($incident['image_path'] && file_exists($incident['image_path'])): ?>
         <div class="submission-image">
@@ -174,6 +223,33 @@ include __DIR__ . '/../includes/header.php';
         </div>
         <?php endif; ?>
     </div>
+
+    <!-- ── ELDER: RESOLVE INCIDENT ────────────────────────────── -->
+    <?php if ($user['role'] === 'elder' && $incident['user_id'] == $user['user_id']
+             && !in_array($incident['status'], ['reviewed','dismissed'])): ?>
+    <div class="card" style="margin-top:1.5rem;">
+        <h2>Resolve This Report</h2>
+        <p style="color:var(--color-muted); font-size:.9rem; margin-bottom:1rem;">
+            Once you've reviewed the analysis, you can mark this report as resolved.
+        </p>
+        <div style="display:flex; gap:.5rem; flex-wrap:wrap;">
+            <form method="POST" style="display:inline;">
+                <?= csrfField() ?>
+                <input type="hidden" name="action" value="elder_resolve">
+                <input type="hidden" name="status" value="reviewed">
+                <button type="submit" class="btn btn-success"
+                        onclick="return confirm('Mark this report as reviewed?')">&#x2705; Mark as Reviewed</button>
+            </form>
+            <form method="POST" style="display:inline;">
+                <?= csrfField() ?>
+                <input type="hidden" name="action" value="elder_resolve">
+                <input type="hidden" name="status" value="dismissed">
+                <button type="submit" class="btn btn-secondary"
+                        onclick="return confirm('Dismiss this report? This means it was not a real scam.')">Dismiss (Not a Scam)</button>
+            </form>
+        </div>
+    </div>
+    <?php endif; ?>
 
     <!-- ── ADMIN/CAREGIVER CONTROLS ──────────────────────────── -->
     <?php if (in_array($user['role'], ['admin','caregiver'])): ?>
@@ -195,7 +271,6 @@ include __DIR__ . '/../includes/header.php';
         </form>
 
         <?php if ($user['role'] === 'admin' && $analysisReady): ?>
-        <!-- ── Admin: Override Scam Category ────────────────────── -->
         <div style="margin-top:1.5rem;">
             <h2>Override Scam Category</h2>
             <form method="POST" action="">
@@ -217,14 +292,13 @@ include __DIR__ . '/../includes/header.php';
             </form>
         </div>
 
-        <!-- ── Admin: Delete Analysis ───────────────────────────── -->
         <div style="margin-top:1.5rem;">
             <h2>Delete Analysis</h2>
             <p style="color:var(--color-muted); font-size:.9rem; margin-bottom:.75rem;">
-                This will remove the AI analysis and reset the incident to "pending" status.
+                Remove the AI analysis and reset the incident to "pending".
             </p>
             <form method="POST" action=""
-                  onsubmit="return confirm('Delete the analysis for this incident? The incident will be reset to pending.')">
+                  onsubmit="return confirm('Delete the analysis? Incident will reset to pending.')">
                 <?= csrfField() ?>
                 <input type="hidden" name="action" value="delete_analysis">
                 <button type="submit" class="btn btn-danger">Delete Analysis</button>
@@ -246,7 +320,7 @@ include __DIR__ . '/../includes/header.php';
 
     <!-- ── ELDER DELETE ───────────────────────────────────────── -->
     <?php if ($user['role'] === 'elder' && $incident['user_id'] == $user['user_id']): ?>
-    <div class="elder-controls">
+    <div class="elder-controls" style="margin-top:1rem;">
         <a href="<?= APP_URL ?>/api/delete_incident.php?id=<?= $incidentId ?>&csrf=<?= urlencode(csrfToken()) ?>"
            class="btn btn-outline-danger btn-sm"
            onclick="return confirm('Remove this report from your history?')">
@@ -259,7 +333,6 @@ include __DIR__ . '/../includes/header.php';
 
 <?php if (!$analysisReady): ?>
 <script>
-// Auto-refresh every 5 seconds until analysis is ready
 setTimeout(function() { window.location.reload(); }, 5000);
 </script>
 <?php endif; ?>

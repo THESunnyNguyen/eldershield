@@ -16,38 +16,42 @@ echo "========================================\n";
 echo " ElderShield — Full Database Seed\n";
 echo "========================================\n\n";
 
-// ── 1. USERS (20 rows: 2 admins, 6 caregivers, 12 elders) ────
+// ── 1. USERS (22 rows: 3 admins, 6 caregivers, 13 elders) ────
+// Includes required test users: bsmith (admin) and pjones (elder)
 $users = [
-    ['Admin User',          'admin@eldershield.com',     'admin'],
-    ['System Admin',        'sysadmin@eldershield.com',  'admin'],
-    ['Sarah Johnson',       'sarah@example.com',         'caregiver'],
-    ['Michael Chen',        'michael.chen@example.com',  'caregiver'],
-    ['Lisa Patel',          'lisa.patel@example.com',    'caregiver'],
-    ['James Wilson',        'james.wilson@example.com',  'caregiver'],
-    ['Maria Garcia',        'maria.garcia@example.com',  'caregiver'],
-    ['Robert Kim',          'robert.kim@example.com',    'caregiver'],
-    ['Dorothy Johnson',     'dorothy@example.com',       'elder'],
-    ['Harold Williams',     'harold@example.com',        'elder'],
-    ['Betty Davis',         'betty@example.com',         'elder'],
-    ['Walter Brown',        'walter@example.com',        'elder'],
-    ['Margaret Miller',     'margaret@example.com',      'elder'],
-    ['Arthur Anderson',     'arthur@example.com',        'elder'],
-    ['Helen Thomas',        'helen@example.com',         'elder'],
-    ['George Jackson',      'george@example.com',        'elder'],
-    ['Frances White',       'frances@example.com',       'elder'],
-    ['Earl Harris',         'earl@example.com',          'elder'],
-    ['Ruth Martin',         'ruth@example.com',          'elder'],
-    ['Frank Robinson',      'frank@example.com',         'elder'],
+    ['Admin User',          'admin@eldershield.com',     'admin',     'password123'],
+    ['System Admin',        'sysadmin@eldershield.com',  'admin',     'password123'],
+    ['B Smith',             'bsmith@eldershield.com',    'admin',     'mysecret'],
+    ['Sarah Johnson',       'sarah@example.com',         'caregiver', 'password123'],
+    ['Michael Chen',        'michael.chen@example.com',  'caregiver', 'password123'],
+    ['Lisa Patel',          'lisa.patel@example.com',    'caregiver', 'password123'],
+    ['James Wilson',        'james.wilson@example.com',  'caregiver', 'password123'],
+    ['Maria Garcia',        'maria.garcia@example.com',  'caregiver', 'password123'],
+    ['Robert Kim',          'robert.kim@example.com',    'caregiver', 'password123'],
+    ['Dorothy Johnson',     'dorothy@example.com',       'elder',     'password123'],
+    ['Harold Williams',     'harold@example.com',        'elder',     'password123'],
+    ['Betty Davis',         'betty@example.com',         'elder',     'password123'],
+    ['Walter Brown',        'walter@example.com',        'elder',     'password123'],
+    ['Margaret Miller',     'margaret@example.com',      'elder',     'password123'],
+    ['Arthur Anderson',     'arthur@example.com',        'elder',     'password123'],
+    ['Helen Thomas',        'helen@example.com',         'elder',     'password123'],
+    ['George Jackson',      'george@example.com',        'elder',     'password123'],
+    ['Frances White',       'frances@example.com',       'elder',     'password123'],
+    ['Earl Harris',         'earl@example.com',          'elder',     'password123'],
+    ['Ruth Martin',         'ruth@example.com',          'elder',     'password123'],
+    ['Frank Robinson',      'frank@example.com',         'elder',     'password123'],
+    ['P Jones',             'pjones@eldershield.com',    'elder',     'acrobat'],
 ];
 
 $userIds = [];
-foreach ($users as [$name, $email, $role]) {
+foreach ($users as [$name, $email, $role, $pass]) {
+    $hash = password_hash($pass, PASSWORD_BCRYPT, ['cost' => 12]);
     $stmt = $db->prepare(
         'INSERT INTO users (full_name, email, password_hash, role)
          VALUES (?, ?, ?, ?)
          ON DUPLICATE KEY UPDATE password_hash=VALUES(password_hash), full_name=VALUES(full_name)'
     );
-    $stmt->execute([$name, $email, $pw, $role]);
+    $stmt->execute([$name, $email, $hash, $role]);
     $id = $db->lastInsertId();
     if (!$id) {
         $s = $db->prepare('SELECT user_id FROM users WHERE email=?');
@@ -58,20 +62,22 @@ foreach ($users as [$name, $email, $role]) {
     echo "User: $email ($role) -> ID $id\n";
 }
 
-// ── 2. ACCOUNT LINKS (12 rows) ───────────────────────────────
+// ── 2. ACCOUNT LINKS (14 rows) ────────────────────────────────
 $links = [
-    ['dorothy@example.com',  'sarah@example.com',       'family',    'active'],
-    ['harold@example.com',   'sarah@example.com',       'family',    'active'],
-    ['betty@example.com',    'michael.chen@example.com', 'family',   'active'],
-    ['walter@example.com',   'michael.chen@example.com', 'family',   'active'],
-    ['margaret@example.com', 'lisa.patel@example.com',   'caregiver','active'],
-    ['arthur@example.com',   'lisa.patel@example.com',   'family',   'active'],
-    ['helen@example.com',    'james.wilson@example.com', 'caregiver','active'],
-    ['george@example.com',   'james.wilson@example.com', 'family',   'active'],
-    ['frances@example.com',  'maria.garcia@example.com', 'caregiver','active'],
-    ['earl@example.com',     'maria.garcia@example.com', 'family',   'active'],
-    ['ruth@example.com',     'robert.kim@example.com',   'caregiver','active'],
-    ['frank@example.com',    'robert.kim@example.com',   'family',   'pending'],
+    ['dorothy@example.com',           'sarah@example.com',         'family',    'active'],
+    ['harold@example.com',            'sarah@example.com',         'family',    'active'],
+    ['betty@example.com',             'michael.chen@example.com',  'family',    'active'],
+    ['walter@example.com',            'michael.chen@example.com',  'family',    'active'],
+    ['margaret@example.com',          'lisa.patel@example.com',    'caregiver', 'active'],
+    ['arthur@example.com',            'lisa.patel@example.com',    'family',    'active'],
+    ['helen@example.com',             'james.wilson@example.com',  'caregiver', 'active'],
+    ['george@example.com',            'james.wilson@example.com',  'family',    'active'],
+    ['frances@example.com',           'maria.garcia@example.com',  'caregiver', 'active'],
+    ['earl@example.com',              'maria.garcia@example.com',  'family',    'active'],
+    ['ruth@example.com',              'robert.kim@example.com',    'caregiver', 'active'],
+    ['frank@example.com',             'robert.kim@example.com',    'family',    'pending'],
+    ['pjones@eldershield.com',        'sarah@example.com',         'family',    'active'],
+    ['dorothy@example.com',           'michael.chen@example.com',  'caregiver', 'active'],
 ];
 
 foreach ($links as [$elderEmail, $cgEmail, $relType, $status]) {
@@ -140,7 +146,7 @@ for ($i = 0; $i < 20; $i++) {
     echo "Incident #" . end($incidentIds) . " ($elderEmail)\n";
 }
 
-// ── 4. ANALYSIS (20 rows — one per incident) ──────────────────
+// ── 4. ANALYSIS (20 rows — one per incident) ─────────────────
 $tactics = [
     ['urgency','authority_impersonation','fear'],
     ['tech_jargon','urgency','financial_pressure'],
@@ -190,7 +196,6 @@ $notifTypes = ['high_risk','medium_risk','info','admin_action'];
 for ($i = 0; $i < 22; $i++) {
     $recipientEmail = array_values($userIds);
     $recipientId = $recipientEmail[array_rand($recipientEmail)];
-    // Use a valid incident_id if available
     $incId = ($i < count($incidentIds)) ? $incidentIds[$i % count($incidentIds)] : null;
     $type  = $notifTypes[$i % count($notifTypes)];
     $msg   = match($type) {
@@ -217,13 +222,15 @@ $db->exec(
 );
 echo "Subscription plans: ensured free + premium exist\n";
 
-// ── 7. SUBSCRIPTIONS (12 rows — one per elder) ───────────────
+// ── 7. SUBSCRIPTIONS (one per elder) ──────────────────────────
 $planFree = $db->query("SELECT plan_id FROM subscription_plans WHERE name='free'")->fetchColumn();
 $planPrem = $db->query("SELECT plan_id FROM subscription_plans WHERE name='premium'")->fetchColumn();
 
-foreach ($elderEmails as $idx => $email) {
-    $uid  = $userIds[$email];
-    $plan = ($idx < 4) ? $planPrem : $planFree; // first 4 elders are premium
+$allElderEmails = array_merge($elderEmails, ['pjones@eldershield.com']);
+foreach ($allElderEmails as $idx => $email) {
+    $uid  = $userIds[$email] ?? 0;
+    if (!$uid) continue;
+    $plan = ($idx < 4) ? $planPrem : $planFree;
     $exp  = ($plan == $planPrem) ? date('Y-m-d H:i:s', strtotime('+30 days')) : null;
     try {
         $db->prepare(
@@ -237,7 +244,7 @@ foreach ($elderEmails as $idx => $email) {
     }
 }
 
-// ── 8. INVOICES + LINE ITEMS (8 invoices, ~20 line items) ─────
+// ── 8. INVOICES + LINE ITEMS ──────────────────────────────────
 $caregiverEmails = ['sarah@example.com','michael.chen@example.com','lisa.patel@example.com',
                     'james.wilson@example.com','maria.garcia@example.com','robert.kim@example.com'];
 
@@ -254,7 +261,6 @@ foreach ($billingMonths as $month) {
         $cgId = $userIds[$cgEmail] ?? 0;
         if (!$cgId) continue;
 
-        // Find this caregiver's active elders
         $elderStmt = $db->prepare(
             'SELECT al.elder_user_id, u.full_name
              FROM account_links al JOIN users u ON al.elder_user_id = u.user_id
@@ -296,8 +302,11 @@ echo "Invoices: $invoiceCount created, $lineCount line items\n";
 
 echo "\n========================================\n";
 echo " Seed complete! All tables populated.\n";
-echo " Login: admin@eldershield.com / password123\n";
-echo " Login: dorothy@example.com  / password123\n";
-echo " Login: sarah@example.com    / password123\n";
+echo "========================================\n";
+echo " Test user (admin): bsmith@eldershield.com / mysecret\n";
+echo " Test user (elder): pjones@eldershield.com / acrobat\n";
+echo " Demo admin:        admin@eldershield.com  / password123\n";
+echo " Demo elder:        dorothy@example.com    / password123\n";
+echo " Demo caregiver:    sarah@example.com      / password123\n";
 echo "========================================\n";
 echo "</pre>\n";

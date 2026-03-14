@@ -1,6 +1,7 @@
 <?php
 // ============================================================
-// pages/submit.php — Elder submits suspicious content for AI analysis
+// pages/submit.php — Submit suspicious content for AI analysis
+// Accessible by: elder (own report), caregiver (on behalf of linked elder)
 // ============================================================
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/helpers.php';
@@ -8,29 +9,63 @@ require_once __DIR__ . '/../includes/ai_service.php';
 require_once __DIR__ . '/../includes/subscription_helper.php';
 
 requireLogin();
-requireRole('elder');
+requireRole(['elder', 'caregiver']);
 
-$user = currentUser();
+$user   = currentUser();
 $errors = [];
 
-// ── Subscription gate (server-side enforcement) ───────────────
-$sub          = getUserSubscription($user['user_id']);
-$monthlyCount = getMonthlyIncidentCount($user['user_id']);
-$limitReached = !canSubmitIncident($user['user_id']);
+// ── Determine who the report is being submitted for ───────────
+$isCaregiver  = ($user['role'] === 'caregiver');
+$linkedElders = [];
+if ($isCaregiver) {
+    $linkedElders = getLinksForCaregiver((int)$user['user_id']);
+    if (empty($linkedElders)) {
+        setFlash('danger', 'You have no linked elders. Link an elder account first.');
+        header('Location: ' . APP_URL . '/pages/admin_users.php');
+        exit;
+    }
+}
+
+// Subscription gate (only applies when submitting as elder)
+$sub          = null;
+$monthlyCount = 0;
+$limitReached = false;
+if (!$isCaregiver) {
+    $sub          = getUserSubscription($user['user_id']);
+    $monthlyCount = getMonthlyIncidentCount($user['user_id']);
+    $limitReached = !canSubmitIncident($user['user_id']);
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
-    // CSRF failure -> 403 immediately (OWASP best practice)
     if (!verifyCsrf($_POST['csrf_token'] ?? '')) {
         http_response_code(403);
         $errors[] = 'Invalid form submission. Please try again.';
-    } elseif ($limitReached) {
-        // Re-check server-side on POST — cannot be bypassed via JS
+    } elseif (!$isCaregiver && $limitReached) {
         $errors[] = 'You have reached your monthly limit. Please upgrade to Premium.';
     } else {
         $content = trim($_POST['content'] ?? '');
         if (strlen($content) < 10) {
             $errors[] = 'Please describe the suspicious message in at least 10 characters.';
+        }
+
+        // Determine the submitting user ID
+        if ($isCaregiver) {
+            $elderUserId = (int)($_POST['elder_user_id'] ?? 0);
+            // Verify the caregiver actually has an active link to this elder
+            $validElder = false;
+            foreach ($linkedElders as $le) {
+                if ((int)$le['elder_user_id'] === $elderUserId) {
+                    $validElder = true;
+                    break;
+                }
+            }
+            if (!$validElder) {
+                $errors[] = 'Invalid elder selection. You can only submit on behalf of your linked elders.';
+            }
+            $submitUserId = $elderUserId;
+        } else {
+            $submitUserId = (int)$user['user_id'];
         }
 
         $imagePath = null;
@@ -45,13 +80,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if (!$errors) {
             // 1. Save incident to DB immediately
-            $incidentId = createIncident((int)$user['user_id'], $content, $imagePath);
+            $incidentId = createIncident($submitUserId, $content, $imagePath);
 
             // 2. Fire Ollama in background — user is NOT kept waiting
             analyzeIncidentAsync($incidentId, $content, $imagePath);
 
             // 3. Redirect immediately — detail page will poll for results
-            setFlash('success', 'Your report has been submitted! Analysis is running and will appear shortly.');
+            setFlash('success', 'Report submitted! Analysis is running and will appear shortly.');
             header('Location: ' . APP_URL . '/pages/incident_detail.php?id=' . $incidentId);
             exit;
         }
@@ -66,8 +101,13 @@ include __DIR__ . '/../includes/header.php';
     <div class="submit-card">
         <h1>&#x1F6A8; Report a Suspicious Message</h1>
         <p class="submit-intro">
-            Did someone contact you asking for money, passwords, or personal information?
-            Tell us what happened and our AI will check if it's a scam — instantly.
+            <?php if ($isCaregiver): ?>
+                Submit a scam report on behalf of one of your linked elders.
+                Our AI will analyze it and flag any risks.
+            <?php else: ?>
+                Did someone contact you asking for money, passwords, or personal information?
+                Tell us what happened and our AI will check if it's a scam — instantly.
+            <?php endif; ?>
         </p>
 
         <?php if ($errors): ?>
@@ -76,8 +116,7 @@ include __DIR__ . '/../includes/header.php';
             </div>
         <?php endif; ?>
 
-        <?php if ($limitReached): ?>
-            <!-- Hard block with upgrade prompt -->
+        <?php if (!$isCaregiver && $limitReached): ?>
             <div class="alert alert-warning">
                 <strong>Monthly limit reached.</strong>
                 You've used <?= (int)$monthlyCount ?> of <?= (int)FREE_INCIDENT_LIMIT ?> free submissions this month.
@@ -86,7 +125,7 @@ include __DIR__ . '/../includes/header.php';
                 </a>
             </div>
         <?php else: ?>
-            <?php if ($sub['plan_name'] === 'free'): ?>
+            <?php if (!$isCaregiver && $sub && $sub['plan_name'] === 'free'): ?>
                 <div class="alert alert-info">
                     <?= (int)$monthlyCount ?> of <?= (int)FREE_INCIDENT_LIMIT ?> free submissions used this month.
                     <a href="<?= e(APP_URL) ?>/pages/subscription.php">Upgrade for unlimited access.</a>
@@ -96,8 +135,26 @@ include __DIR__ . '/../includes/header.php';
             <form method="POST" action="" enctype="multipart/form-data">
                 <?= csrfField() ?>
 
+                <?php if ($isCaregiver): ?>
+                <!-- Caregiver selects which elder to submit for -->
                 <div class="form-group">
-                    <label for="content">What happened? Describe the message, call, or email:</label>
+                    <label for="elder_user_id">Submit on behalf of:</label>
+                    <select id="elder_user_id" name="elder_user_id" required>
+                        <option value="">— Select an elder —</option>
+                        <?php foreach ($linkedElders as $le): ?>
+                            <option value="<?= (int)$le['elder_user_id'] ?>"
+                                <?= ((int)($_POST['elder_user_id'] ?? 0) === (int)$le['elder_user_id']) ? 'selected' : '' ?>>
+                                <?= e($le['full_name']) ?> (<?= e($le['email']) ?>)
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <?php endif; ?>
+
+                <div class="form-group">
+                    <label for="content">
+                        <?= $isCaregiver ? 'Describe the suspicious message the elder received:' : 'What happened? Describe the message, call, or email:' ?>
+                    </label>
                     <textarea id="content" name="content" rows="7"
                         placeholder="Example: I received a call from someone saying they were from Microsoft..."
                         required><?= e($_POST['content'] ?? '') ?></textarea>
@@ -121,7 +178,7 @@ include __DIR__ . '/../includes/header.php';
                     &#x1F50D; Analyze This Message
                 </button>
                 <p class="submit-note">
-                    Your report is private. It will only be seen by you and your caregivers.
+                    Reports are private and only visible to the elder, their caregivers, and admins.
                 </p>
             </form>
         <?php endif; ?>
@@ -143,7 +200,7 @@ include __DIR__ . '/../includes/header.php';
 </div>
 
 <script>
-document.getElementById('screenshot').addEventListener('change', function(e) {
+document.getElementById('screenshot')?.addEventListener('change', function(e) {
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();

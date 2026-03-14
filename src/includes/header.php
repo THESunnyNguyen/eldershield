@@ -10,7 +10,6 @@ $unreadCount = isLoggedIn() ? countUnreadNotifications((int)$user['user_id']) : 
 $pageTitle   = $pageTitle ?? APP_NAME;
 $flash       = getFlash();
 
-// Check billing restriction for caregivers — enforced server-side on every page load
 $billingRestricted = false;
 if (isLoggedIn() && $user['role'] === 'caregiver') {
     $billingRestricted = caregiverAccessRestricted((int)$user['user_id']);
@@ -28,14 +27,14 @@ if (isLoggedIn() && $user['role'] === 'caregiver') {
 
 <?php if ($billingRestricted): ?>
 <div class="billing-banner">
-    ⚠️ <strong>Your account has restricted access due to a failed payment.</strong>
-    <a href="<?= APP_URL ?>/pages/billing.php" class="billing-banner-link">Resolve now →</a>
+    &#x26A0;&#xFE0F; <strong>Your account has restricted access due to a failed payment.</strong>
+    <a href="<?= APP_URL ?>/pages/billing.php" class="billing-banner-link">Resolve now &rarr;</a>
 </div>
 <?php endif; ?>
 
 <nav class="navbar">
     <div class="nav-brand">
-        <a href="<?= APP_URL ?>/pages/dashboard.php">🛡️ ElderShield</a>
+        <a href="<?= APP_URL ?>/pages/dashboard.php">&#x1F6E1;&#xFE0F; ElderShield</a>
     </div>
     <?php if (isLoggedIn()): ?>
     <ul class="nav-links">
@@ -45,6 +44,9 @@ if (isLoggedIn() && $user['role'] === 'caregiver') {
         <?php elseif (in_array($user['role'], ['caregiver', 'admin'])): ?>
             <li><a href="<?= APP_URL ?>/pages/dashboard.php">Dashboard</a></li>
             <li><a href="<?= APP_URL ?>/pages/incidents.php">All Reports</a></li>
+            <?php if ($user['role'] === 'caregiver'): ?>
+                <li><a href="<?= APP_URL ?>/pages/submit.php">Report Scam</a></li>
+            <?php endif; ?>
             <?php if ($user['role'] === 'admin'): ?>
                 <li><a href="<?= APP_URL ?>/pages/admin_users.php">Users</a></li>
             <?php endif; ?>
@@ -52,7 +54,7 @@ if (isLoggedIn() && $user['role'] === 'caregiver') {
                 <li>
                     <a href="<?= APP_URL ?>/pages/billing.php"
                        class="<?= $billingRestricted ? 'nav-billing-alert' : '' ?>">
-                        💳 Billing<?= $billingRestricted ? ' ⚠️' : '' ?>
+                        &#x1F4B3; Billing<?= $billingRestricted ? ' &#x26A0;&#xFE0F;' : '' ?>
                     </a>
                 </li>
             <?php endif; ?>
@@ -60,7 +62,7 @@ if (isLoggedIn() && $user['role'] === 'caregiver') {
 
         <li>
             <a href="<?= APP_URL ?>/pages/notifications.php" class="notif-link" id="notif-bell">
-                🔔 <span id="notif-badge" class="badge-notif" <?= $unreadCount > 0 ? '' : 'style="display:none"' ?>><?= $unreadCount ?></span>
+                &#x1F514; <span id="notif-badge" class="badge-notif" <?= $unreadCount > 0 ? '' : 'style="display:none"' ?>><?= $unreadCount ?></span>
             </a>
         </li>
 

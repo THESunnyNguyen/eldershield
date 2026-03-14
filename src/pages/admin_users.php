@@ -1,5 +1,5 @@
 <?php
-// pages/admin_users.php — User management + caregiver linking + billing overview
+// pages/admin_users.php — User management + caregiver linking + admin create user
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/helpers.php';
@@ -9,7 +9,6 @@ requireLogin();
 $user = currentUser();
 $db   = getDB();
 
-// Caregivers can only link/manage relationships; admins can do everything
 if (!in_array($user['role'], ['admin','caregiver'])) {
     header('Location: ' . APP_URL . '/pages/unauthorized.php');
     exit;
@@ -25,6 +24,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $errors[] = 'Invalid form token.';
     } else {
         $action = $_POST['action'] ?? '';
+
+        // Admin: create a new user
+        if ($action === 'create_user' && $user['role'] === 'admin') {
+            $newName  = trim($_POST['new_full_name'] ?? '');
+            $newEmail = trim($_POST['new_email']     ?? '');
+            $newPass  = $_POST['new_password']        ?? '';
+            $newRole  = $_POST['new_role']            ?? 'elder';
+
+            if (strlen($newName) < 2) {
+                $errors[] = 'Full name must be at least 2 characters.';
+            }
+            if (!filter_var($newEmail, FILTER_VALIDATE_EMAIL)) {
+                $errors[] = 'Please enter a valid email address.';
+            }
+            if (strlen($newPass) < 8) {
+                $errors[] = 'Password must be at least 8 characters.';
+            }
+            if (!in_array($newRole, ['elder','caregiver','admin'], true)) {
+                $newRole = 'elder';
+            }
+
+            if (empty($errors)) {
+                $result = registerUser($newName, $newEmail, $newPass, $newRole);
+                if ($result['success']) {
+                    $success[] = 'User "' . $newName . '" created successfully as ' . $newRole . '.';
+                } else {
+                    $errors[] = $result['message'];
+                }
+            }
+        }
 
         // Admin: toggle user active status
         if ($action === 'toggle_active' && $user['role'] === 'admin') {
@@ -134,6 +163,28 @@ include __DIR__ . '/../includes/header.php';
     <?php foreach ($errors  as $e): ?><div class="alert alert-danger"><?= e($e) ?></div><?php endforeach; ?>
     <?php foreach ($success as $s): ?><div class="alert alert-success"><?= e($s) ?></div><?php endforeach; ?>
 
+    <!-- ── ADMIN: CREATE NEW USER ─────────────────────────────── -->
+    <?php if ($user['role'] === 'admin'): ?>
+    <div class="card">
+        <h2>Create New User</h2>
+        <form method="POST">
+            <?= csrfField() ?>
+            <input type="hidden" name="action" value="create_user">
+            <div class="form-inline" style="flex-wrap:wrap; gap:.5rem;">
+                <input type="text" name="new_full_name" placeholder="Full Name" required minlength="2" style="flex:1; min-width:150px;">
+                <input type="email" name="new_email" placeholder="Email Address" required style="flex:1; min-width:200px;">
+                <input type="password" name="new_password" placeholder="Password (min 8 chars)" required minlength="8" style="flex:1; min-width:150px;">
+                <select name="new_role" style="min-width:120px;">
+                    <option value="elder">Elder</option>
+                    <option value="caregiver">Caregiver</option>
+                    <option value="admin">Admin</option>
+                </select>
+                <button type="submit" class="btn btn-primary">Create User</button>
+            </div>
+        </form>
+    </div>
+    <?php endif; ?>
+
     <!-- ── LINK NEW ELDER ────────────────────────────────────────── -->
     <div class="card">
         <h2>Link an Elder Account</h2>
@@ -192,14 +243,14 @@ include __DIR__ . '/../includes/header.php';
                                 <input type="hidden" name="action" value="revoke_link">
                                 <input type="hidden" name="link_id" value="<?= $l['link_id'] ?>">
                                 <button class="btn btn-sm btn-danger"
-                                        onclick="return confirm('Revoke this relationship? Prorated billing will apply.')">
+                                        onclick="return confirm('Revoke this relationship?')">
                                     Revoke
                                 </button>
                             </form>
                         <?php endif; ?>
                         <?php if ($user['role'] === 'admin'): ?>
                             <form method="POST" style="display:inline"
-                                  onsubmit="return confirm('Permanently delete this link record? This cannot be undone.')">
+                                  onsubmit="return confirm('Permanently delete this link record?')">
                                 <?= csrfField() ?>
                                 <input type="hidden" name="action" value="delete_link">
                                 <input type="hidden" name="link_id" value="<?= $l['link_id'] ?>">

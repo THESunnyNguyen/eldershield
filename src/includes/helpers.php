@@ -24,7 +24,6 @@ function handleImageUpload(array $file): array {
         return ['success' => false, 'message' => 'Image must be under ' . UPLOAD_MAX_MB . 'MB.'];
     }
 
-    // Validate it's actually an image (not just a renamed file)
     if (!@getimagesize($file['tmp_name'])) {
         return ['success' => false, 'message' => 'Uploaded file is not a valid image.'];
     }
@@ -75,7 +74,6 @@ function saveAnalysis(int $incidentId, array $result): int {
         json_encode($result['ai_raw_response']),
     ]);
 
-    // Update incident status
     $db->prepare('UPDATE incidents SET status="analyzed" WHERE incident_id=?')
        ->execute([$incidentId]);
 
@@ -147,13 +145,28 @@ function updateIncidentStatus(int $incidentId, string $status): void {
            ->execute([$status, $incidentId]);
 }
 
+/**
+ * Update the content text of an incident.
+ * Only the owning elder (or admin) may call this.
+ */
+function updateIncidentContent(int $incidentId, int $userId, string $role, string $newContent): bool {
+    $db = getDB();
+    if ($role === 'admin') {
+        $stmt = $db->prepare('UPDATE incidents SET content = ? WHERE incident_id = ?');
+        $stmt->execute([$newContent, $incidentId]);
+    } else {
+        $stmt = $db->prepare('UPDATE incidents SET content = ? WHERE incident_id = ? AND user_id = ?');
+        $stmt->execute([$newContent, $incidentId, $userId]);
+    }
+    return $stmt->rowCount() > 0;
+}
+
 function deleteIncident(int $incidentId, int $userId, string $role): bool {
     $db = getDB();
     if ($role === 'admin') {
         $stmt = $db->prepare('DELETE FROM incidents WHERE incident_id=?');
         $stmt->execute([$incidentId]);
     } else {
-        // Elders can only delete their own
         $stmt = $db->prepare('DELETE FROM incidents WHERE incident_id=? AND user_id=?');
         $stmt->execute([$incidentId, $userId]);
     }
@@ -166,7 +179,6 @@ function deleteIncident(int $incidentId, int $userId, string $role): bool {
 
 /**
  * Delete analysis for an incident and reset incident to pending.
- * Admin only — used for standalone analysis deletion.
  */
 function deleteAnalysis(int $incidentId): bool {
     $db   = getDB();
@@ -184,10 +196,6 @@ function deleteAnalysis(int $incidentId): bool {
 // NOTIFICATIONS
 // ════════════════════════════════════════════════════════════
 
-/**
- * Create an incident-linked notification.
- * incident_id is now nullable in the schema — use NULL for billing notifications.
- */
 function createNotification(int $incidentId, int $recipientId, string $message, string $type = 'info'): void {
     $db   = getDB();
     $stmt = $db->prepare(
@@ -207,7 +215,6 @@ function notifyCaregivers(int $incidentId, int $elderUserId, int $probability, s
     $stmt->execute([$elderUserId]);
     $caregivers = $stmt->fetchAll();
 
-    // Also get elder name
     $nameStmt = $db->prepare('SELECT full_name FROM users WHERE user_id=?');
     $nameStmt->execute([$elderUserId]);
     $elderName = $nameStmt->fetchColumn() ?: 'An elder user';
@@ -222,7 +229,6 @@ function notifyCaregivers(int $incidentId, int $elderUserId, int $probability, s
         createNotification($incidentId, (int)$cg['caregiver_user_id'], $message, $notifType);
     }
 
-    // Also notify admins
     $adminStmt = $db->prepare('SELECT user_id FROM users WHERE role="admin" AND is_active=1');
     $adminStmt->execute();
     foreach ($adminStmt->fetchAll() as $admin) {
@@ -264,13 +270,9 @@ function countUnreadNotifications(int $userId): int {
 // ACCOUNT LINKS (caregiver <-> elder)
 // ════════════════════════════════════════════════════════════
 
-/**
- * Create a pending link request.
- */
 function linkCaregiverToElder(int $elderUserId, int $caregiverUserId, string $relationshipType = 'caregiver'): array {
     $db = getDB();
 
-    // Block if already active or pending
     $check = $db->prepare(
         'SELECT link_id FROM account_links
          WHERE elder_user_id = ? AND caregiver_user_id = ? AND status IN ("active","pending")
@@ -310,10 +312,6 @@ function revokeLink(int $linkId): void {
     )->execute([$linkId]);
 }
 
-/**
- * Hard-delete an account link record.
- * Admin only — removes the row entirely from the database.
- */
 function deleteLink(int $linkId): bool {
     $stmt = getDB()->prepare('DELETE FROM account_links WHERE link_id = ?');
     $stmt->execute([$linkId]);
@@ -346,9 +344,6 @@ function getLinksForCaregiver(int $caregiverId): array {
 // ADMIN — SCAM TYPE OVERRIDE
 // ════════════════════════════════════════════════════════════
 
-/**
- * Admin override: update scam category and mark admin_override flag.
- */
 function updateScamCategory(int $incidentId, string $category): bool {
     $category = trim(strip_tags($category));
     if (empty($category) || strlen($category) > 100) return false;
