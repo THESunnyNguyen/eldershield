@@ -20,7 +20,7 @@ $limitReached = !canSubmitIncident($user['user_id']);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
-    // CSRF failure → 403 immediately (OWASP best practice)
+    // CSRF failure -> 403 immediately (OWASP best practice)
     if (!verifyCsrf($_POST['csrf_token'] ?? '')) {
         http_response_code(403);
         $errors[] = 'Invalid form submission. Please try again.';
@@ -44,21 +44,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         if (!$errors) {
-            $incidentId = createIncident((int)$user['user_id'], $content, $imagePath);
-            $aiResult   = analyzeIncident($content, $imagePath);
-            saveAnalysis($incidentId, $aiResult);
-
-            // Only notify caregivers if plan supports it
-            if ($aiResult['scam_probability'] >= RISK_MEDIUM && $sub['notifications_enabled']) {
-                notifyCaregivers(
-                    $incidentId,
-                    (int)$user['user_id'],
-                    (int)$aiResult['scam_probability'],
-                    $aiResult['scam_category']
-                );
-            }
-
-            setFlash('success', 'Your report has been analyzed. See the results below.');
             // 1. Save incident to DB immediately
             $incidentId = createIncident((int)$user['user_id'], $content, $imagePath);
 
@@ -79,7 +64,7 @@ include __DIR__ . '/../includes/header.php';
 
 <div class="submit-container">
     <div class="submit-card">
-        <h1>🚨 Report a Suspicious Message</h1>
+        <h1>&#x1F6A8; Report a Suspicious Message</h1>
         <p class="submit-intro">
             Did someone contact you asking for money, passwords, or personal information?
             Tell us what happened and our AI will check if it's a scam — instantly.
@@ -92,7 +77,7 @@ include __DIR__ . '/../includes/header.php';
         <?php endif; ?>
 
         <?php if ($limitReached): ?>
-            <!-- Hard block with upgrade prompt — integers are safe but cast explicitly -->
+            <!-- Hard block with upgrade prompt -->
             <div class="alert alert-warning">
                 <strong>Monthly limit reached.</strong>
                 You've used <?= (int)$monthlyCount ?> of <?= (int)FREE_INCIDENT_LIMIT ?> free submissions this month.
@@ -120,20 +105,20 @@ include __DIR__ . '/../includes/header.php';
                 </div>
 
                 <div class="form-group">
-                    <label for="screenshot">📸 Upload a Screenshot (optional)</label>
+                    <label for="screenshot">&#x1F4F8; Upload a Screenshot (optional)</label>
                     <div class="upload-zone" id="uploadZone">
                         <input type="file" id="screenshot" name="screenshot"
                                accept="image/*" class="upload-input">
                         <div class="upload-label">
                             <span>Click to upload or drag &amp; drop an image</span>
-                            <small>JPG, PNG, GIF, WEBP · Max <?= (int)UPLOAD_MAX_MB ?>MB</small>
+                            <small>JPG, PNG, GIF, WEBP &middot; Max <?= (int)UPLOAD_MAX_MB ?>MB</small>
                         </div>
                         <div id="imagePreview" class="image-preview hidden"></div>
                     </div>
                 </div>
 
                 <button type="submit" class="btn btn-primary btn-large btn-full" id="submitBtn">
-                    🔍 Analyze This Message
+                    &#x1F50D; Analyze This Message
                 </button>
                 <p class="submit-note">
                     Your report is private. It will only be seen by you and your caregivers.
@@ -143,15 +128,15 @@ include __DIR__ . '/../includes/header.php';
     </div>
 
     <div class="tips-card">
-        <h3>⚠️ Common Scam Warning Signs</h3>
+        <h3>&#x26A0;&#xFE0F; Common Scam Warning Signs</h3>
         <ul>
-            <li>🕐 They're rushing you to decide NOW</li>
-            <li>💰 They want gift cards, wire transfers, or crypto</li>
-            <li>🔑 They ask for passwords or account numbers</li>
-            <li>😨 They threaten bad things if you don't act</li>
-            <li>🏛️ They claim to be the IRS, Social Security, or police</li>
-            <li>🎁 You "won" something you never entered</li>
-            <li>💻 They want to control your computer remotely</li>
+            <li>&#x1F550; They're rushing you to decide NOW</li>
+            <li>&#x1F4B0; They want gift cards, wire transfers, or crypto</li>
+            <li>&#x1F511; They ask for passwords or account numbers</li>
+            <li>&#x1F628; They threaten bad things if you don't act</li>
+            <li>&#x1F3DB;&#xFE0F; They claim to be the IRS, Social Security, or police</li>
+            <li>&#x1F381; You "won" something you never entered</li>
+            <li>&#x1F4BB; They want to control your computer remotely</li>
         </ul>
         <p><strong>When in doubt — don't respond! Report it here first.</strong></p>
     </div>
@@ -179,9 +164,9 @@ function clearImage() {
     document.querySelector('.upload-label').classList.remove('hidden');
 }
 
-document.querySelector('form').addEventListener('submit', function() {
+document.querySelector('form')?.addEventListener('submit', function() {
     const btn = document.getElementById('submitBtn');
-    btn.textContent = '⏳ Submitting...';
+    btn.textContent = '\u23F3 Submitting...';
     btn.disabled = true;
 });
 </script>

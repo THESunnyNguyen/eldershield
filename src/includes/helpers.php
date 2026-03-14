@@ -161,6 +161,26 @@ function deleteIncident(int $incidentId, int $userId, string $role): bool {
 }
 
 // ════════════════════════════════════════════════════════════
+// ANALYSIS CRUD
+// ════════════════════════════════════════════════════════════
+
+/**
+ * Delete analysis for an incident and reset incident to pending.
+ * Admin only — used for standalone analysis deletion.
+ */
+function deleteAnalysis(int $incidentId): bool {
+    $db   = getDB();
+    $stmt = $db->prepare('DELETE FROM analysis WHERE incident_id = ?');
+    $stmt->execute([$incidentId]);
+    $deleted = $stmt->rowCount() > 0;
+    if ($deleted) {
+        $db->prepare('UPDATE incidents SET status = "pending" WHERE incident_id = ?')
+           ->execute([$incidentId]);
+    }
+    return $deleted;
+}
+
+// ════════════════════════════════════════════════════════════
 // NOTIFICATIONS
 // ════════════════════════════════════════════════════════════
 
@@ -224,7 +244,6 @@ function getNotificationsForUser(int $userId, bool $unreadOnly = false): array {
          ORDER BY n.created_at DESC
          LIMIT 50"
     );
-    // Changed JOIN → LEFT JOIN so billing notifications (incident_id=NULL) are included
     $stmt->execute([$userId]);
     return $stmt->fetchAll();
 }
@@ -247,9 +266,6 @@ function countUnreadNotifications(int $userId): int {
 
 /**
  * Create a pending link request.
- * Checks for an existing active/pending link first to avoid
- * duplicate-key errors (the new unique key includes status,
- * so there can only be one active and one pending per pair).
  */
 function linkCaregiverToElder(int $elderUserId, int $caregiverUserId, string $relationshipType = 'caregiver'): array {
     $db = getDB();
@@ -270,7 +286,6 @@ function linkCaregiverToElder(int $elderUserId, int $caregiverUserId, string $re
             'INSERT INTO account_links
                 (elder_user_id, caregiver_user_id, relationship_type, status, linked_at)
              VALUES (?, ?, ?, "pending", NULL)'
-            // linked_at set to UTC_TIMESTAMP() when approved, not when requested
         );
         $stmt->execute([$elderUserId, $caregiverUserId, $relationshipType]);
         return ['success' => true, 'link_id' => (int)$db->lastInsertId()];
@@ -279,10 +294,6 @@ function linkCaregiverToElder(int $elderUserId, int $caregiverUserId, string $re
     }
 }
 
-/**
- * Approve a pending link — set status=active and record linked_at timestamp.
- * linked_at marks the start of the billing period for proration.
- */
 function approveLink(int $linkId): void {
     getDB()->prepare(
         'UPDATE account_links
@@ -291,18 +302,22 @@ function approveLink(int $linkId): void {
     )->execute([$linkId]);
 }
 
-/**
- * Revoke an active link — soft delete with unlinked_at timestamp.
- * Row is kept for billing proration history.
- * The unique key (elder_user_id, caregiver_user_id, status) allows
- * a new "active" link to be created later for the same pair.
- */
 function revokeLink(int $linkId): void {
     getDB()->prepare(
         'UPDATE account_links
          SET status = "revoked", unlinked_at = UTC_TIMESTAMP()
          WHERE link_id = ? AND status = "active"'
     )->execute([$linkId]);
+}
+
+/**
+ * Hard-delete an account link record.
+ * Admin only — removes the row entirely from the database.
+ */
+function deleteLink(int $linkId): bool {
+    $stmt = getDB()->prepare('DELETE FROM account_links WHERE link_id = ?');
+    $stmt->execute([$linkId]);
+    return $stmt->rowCount() > 0;
 }
 
 function getLinksForElder(int $elderUserId): array {

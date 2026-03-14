@@ -24,7 +24,7 @@ $db = getDB();
 
 // Access control
 if ($user['role'] === 'elder' && $incident['user_id'] != $user['user_id']) {
-    header('Location: ' . APP_URL . '/pages/dashboard.php');
+    header('Location: ' . APP_URL . '/pages/unauthorized.php');
     exit;
 }
 if ($user['role'] === 'caregiver') {
@@ -34,20 +34,42 @@ if ($user['role'] === 'caregiver') {
     );
     $check->execute([$incident['user_id'], $user['user_id']]);
     if (!$check->fetch()) {
-        header('Location: ' . APP_URL . '/pages/dashboard.php');
+        header('Location: ' . APP_URL . '/pages/unauthorized.php');
         exit;
     }
 }
 
-// Handle status update (admin/caregiver)
+// Handle POST actions (admin/caregiver)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array($user['role'], ['admin','caregiver'])) {
     if (!verifyCsrf($_POST['csrf_token'] ?? '')) {
         setFlash('danger', 'Invalid form token.');
     } else {
-        $newStatus = $_POST['status'] ?? '';
-        if ($newStatus) {
-            updateIncidentStatus($incidentId, $newStatus);
-            setFlash('success', 'Status updated.');
+        $action = $_POST['action'] ?? 'update_status';
+
+        // Update incident status
+        if ($action === 'update_status') {
+            $newStatus = $_POST['status'] ?? '';
+            if ($newStatus) {
+                updateIncidentStatus($incidentId, $newStatus);
+                setFlash('success', 'Status updated.');
+            }
+        }
+
+        // Admin: override scam category
+        if ($action === 'update_category' && $user['role'] === 'admin') {
+            $category = trim($_POST['scam_category'] ?? '');
+            if ($category) {
+                updateScamCategory($incidentId, $category);
+                setFlash('success', 'Scam category updated.');
+            } else {
+                setFlash('danger', 'Category cannot be empty.');
+            }
+        }
+
+        // Admin: delete analysis
+        if ($action === 'delete_analysis' && $user['role'] === 'admin') {
+            deleteAnalysis($incidentId);
+            setFlash('success', 'Analysis deleted. Incident reset to pending.');
         }
     }
     header('Location: ' . APP_URL . '/pages/incident_detail.php?id=' . $incidentId);
@@ -71,7 +93,7 @@ include __DIR__ . '/../includes/header.php';
 
     <div class="detail-header">
         <a href="<?= APP_URL ?>/pages/<?= $user['role'] === 'elder' ? 'my_incidents' : 'incidents' ?>.php"
-           class="back-link">← Back to Reports</a>
+           class="back-link">&larr; Back to Reports</a>
         <h1>Scam Report #<?= $incidentId ?></h1>
         <div class="detail-meta">
             <span>Submitted by <strong><?= e($ownerName) ?></strong></span>
@@ -93,13 +115,18 @@ include __DIR__ . '/../includes/header.php';
 
         <div class="result-details">
             <div class="result-section">
-                <h3>📋 Scam Type</h3>
-                <p class="scam-category"><?= e(formatCategory($incident['scam_category'] ?? 'Unknown')) ?></p>
+                <h3>&#x1F4CB; Scam Type</h3>
+                <p class="scam-category">
+                    <?= e(formatCategory($incident['scam_category'] ?? 'Unknown')) ?>
+                    <?php if (!empty($incident['admin_override'])): ?>
+                        <span class="badge badge-secondary" style="font-size:.75rem;">Admin Override</span>
+                    <?php endif; ?>
+                </p>
             </div>
 
             <?php if (!empty($tactics)): ?>
             <div class="result-section">
-                <h3>🎯 Tactics Detected</h3>
+                <h3>&#x1F3AF; Tactics Detected</h3>
                 <ul class="tactics-list">
                     <?php foreach ($tactics as $tactic): ?>
                         <li><?= e(formatCategory($tactic)) ?></li>
@@ -109,12 +136,12 @@ include __DIR__ . '/../includes/header.php';
             <?php endif; ?>
 
             <div class="result-section">
-                <h3>💬 What This Means</h3>
+                <h3>&#x1F4AC; What This Means</h3>
                 <p class="explanation-text"><?= e($incident['explanation_simple'] ?? '') ?></p>
             </div>
 
             <div class="result-section">
-                <h3>✅ What You Should Do</h3>
+                <h3>&#x2705; What You Should Do</h3>
                 <div class="action-box">
                     <?= nl2br(e($incident['recommended_action'] ?? '')) ?>
                 </div>
@@ -125,7 +152,7 @@ include __DIR__ . '/../includes/header.php';
     <?php else: ?>
     <!-- ── PENDING — auto-refresh every 5 seconds ────────────── -->
     <div class="alert alert-info analyzing-banner">
-        <span class="analyzing-spinner">⏳</span>
+        <span class="analyzing-spinner">&#9203;</span>
         <strong>Analysis in progress...</strong>
         Your report has been received and our AI is analyzing it now.
         This page will update automatically — no need to do anything.
@@ -154,6 +181,7 @@ include __DIR__ . '/../includes/header.php';
         <h2>Update Status</h2>
         <form method="POST" action="">
             <?= csrfField() ?>
+            <input type="hidden" name="action" value="update_status">
             <div class="form-inline">
                 <select name="status">
                     <?php foreach (['pending','analyzed','reviewed','dismissed'] as $s): ?>
@@ -166,12 +194,50 @@ include __DIR__ . '/../includes/header.php';
             </div>
         </form>
 
+        <?php if ($user['role'] === 'admin' && $analysisReady): ?>
+        <!-- ── Admin: Override Scam Category ────────────────────── -->
+        <div style="margin-top:1.5rem;">
+            <h2>Override Scam Category</h2>
+            <form method="POST" action="">
+                <?= csrfField() ?>
+                <input type="hidden" name="action" value="update_category">
+                <div class="form-inline">
+                    <select name="scam_category">
+                        <?php
+                        $categories = ['phishing','impersonation','romance_scam','tech_support',
+                                       'lottery_prize','grandparent_scam','investment_fraud','other','not_a_scam'];
+                        foreach ($categories as $cat): ?>
+                            <option value="<?= $cat ?>" <?= ($incident['scam_category'] ?? '') === $cat ? 'selected' : '' ?>>
+                                <?= e(formatCategory($cat)) ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                    <button type="submit" class="btn btn-secondary">Update Category</button>
+                </div>
+            </form>
+        </div>
+
+        <!-- ── Admin: Delete Analysis ───────────────────────────── -->
+        <div style="margin-top:1.5rem;">
+            <h2>Delete Analysis</h2>
+            <p style="color:var(--color-muted); font-size:.9rem; margin-bottom:.75rem;">
+                This will remove the AI analysis and reset the incident to "pending" status.
+            </p>
+            <form method="POST" action=""
+                  onsubmit="return confirm('Delete the analysis for this incident? The incident will be reset to pending.')">
+                <?= csrfField() ?>
+                <input type="hidden" name="action" value="delete_analysis">
+                <button type="submit" class="btn btn-danger">Delete Analysis</button>
+            </form>
+        </div>
+        <?php endif; ?>
+
         <?php if ($user['role'] === 'admin'): ?>
-        <div class="danger-zone">
+        <div class="danger-zone" style="margin-top:1.5rem;">
             <a href="<?= APP_URL ?>/api/delete_incident.php?id=<?= $incidentId ?>&csrf=<?= urlencode(csrfToken()) ?>"
                class="btn btn-danger"
-               onclick="return confirm('Permanently delete this incident?')">
-                🗑️ Delete Incident
+               onclick="return confirm('Permanently delete this incident and all associated data?')">
+                &#x1F5D1;&#xFE0F; Delete Entire Incident
             </a>
         </div>
         <?php endif; ?>

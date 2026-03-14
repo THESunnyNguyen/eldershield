@@ -20,11 +20,12 @@ function requireLogin(string $redirect = '/pages/login.php'): void {
 }
 
 // ── Require specific role ─────────────────────────────────────
+// Redirects to unauthorized.php (403 page) if role does not match
 function requireRole(string|array $roles): void {
     requireLogin();
     $roles = (array)$roles;
     if (!in_array($_SESSION['user_role'], $roles, true)) {
-        header('Location: ' . APP_URL . '/pages/dashboard.php');
+        header('Location: ' . APP_URL . '/pages/unauthorized.php');
         exit;
     }
 }

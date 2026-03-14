@@ -11,7 +11,7 @@ $db   = getDB();
 
 // Caregivers can only link/manage relationships; admins can do everything
 if (!in_array($user['role'], ['admin','caregiver'])) {
-    header('Location: ' . APP_URL . '/pages/dashboard.php');
+    header('Location: ' . APP_URL . '/pages/unauthorized.php');
     exit;
 }
 
@@ -76,6 +76,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($action === 'revoke_link') {
             revokeLink((int)($_POST['link_id'] ?? 0));
             $success[] = 'Link revoked.';
+        }
+
+        // Admin: hard-delete a link record
+        if ($action === 'delete_link' && $user['role'] === 'admin') {
+            $linkId = (int)($_POST['link_id'] ?? 0);
+            if ($linkId) {
+                deleteLink($linkId);
+                $success[] = 'Link record permanently deleted.';
+            }
         }
 
         // Admin: delete user
@@ -148,7 +157,7 @@ include __DIR__ . '/../includes/header.php';
     <!-- ── ACCOUNT LINKS ──────────────────────────────────────────── -->
     <?php if (!empty($links)): ?>
     <div class="card">
-        <h2>Caregiver–Elder Relationships</h2>
+        <h2>Caregiver&ndash;Elder Relationships</h2>
         <table class="data-table">
             <thead>
                 <tr>
@@ -167,7 +176,7 @@ include __DIR__ . '/../includes/header.php';
                     <?php if ($user['role']==='admin'): ?><td><?= e($l['caregiver_name']) ?></td><?php endif; ?>
                     <td><?= e($l['relationship_type']) ?></td>
                     <td><span class="status-badge status-<?= e($l['status']) ?>"><?= e(ucfirst($l['status'])) ?></span></td>
-                    <td><?= $l['linked_at'] ? e(date('M j, Y', strtotime($l['linked_at']))) : '—' ?></td>
+                    <td><?= $l['linked_at'] ? e(date('M j, Y', strtotime($l['linked_at']))) : '&mdash;' ?></td>
                     <td>
                         <?php if ($l['status'] === 'pending'): ?>
                             <form method="POST" style="display:inline">
@@ -186,6 +195,15 @@ include __DIR__ . '/../includes/header.php';
                                         onclick="return confirm('Revoke this relationship? Prorated billing will apply.')">
                                     Revoke
                                 </button>
+                            </form>
+                        <?php endif; ?>
+                        <?php if ($user['role'] === 'admin'): ?>
+                            <form method="POST" style="display:inline"
+                                  onsubmit="return confirm('Permanently delete this link record? This cannot be undone.')">
+                                <?= csrfField() ?>
+                                <input type="hidden" name="action" value="delete_link">
+                                <input type="hidden" name="link_id" value="<?= $l['link_id'] ?>">
+                                <button class="btn btn-sm btn-danger">Delete</button>
                             </form>
                         <?php endif; ?>
                     </td>
@@ -228,7 +246,7 @@ include __DIR__ . '/../includes/header.php';
                             <?= e(ucfirst($row['last_status'])) ?>
                         </span>
                         <?php else: ?>
-                            <span style="color:var(--color-muted)">—</span>
+                            <span style="color:var(--color-muted)">&mdash;</span>
                         <?php endif; ?>
                     </td>
                 </tr>
