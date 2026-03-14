@@ -15,7 +15,7 @@ date_default_timezone_set(APP_TIMEZONE);
 
 // ── Ollama (local AI) ─────────────────────────────────────────
 define('OLLAMA_URL',   'http://localhost:11434');
-define('OLLAMA_MODEL', 'qwen2.5vl:7b');
+define('OLLAMA_MODEL', 'qwen3-vl:8b');
 
 // ── Upload settings ───────────────────────────────────────────
 define('UPLOAD_DIR',          APP_ROOT . '/uploads/');
