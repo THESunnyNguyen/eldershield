@@ -535,7 +535,7 @@ function toggleEditForm() {
 }
 
 // ── Image preview in elder edit form ─────────────────────────
-document.getElementById('edit_screenshot')?.addEventListener('change', function(e) {
+function editScreenshotChangeHandler(e) {
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
@@ -547,10 +547,16 @@ document.getElementById('edit_screenshot')?.addEventListener('change', function(
         document.querySelector('#editUploadZone .upload-label').classList.add('hidden');
     };
     reader.readAsDataURL(file);
-});
+}
+document.getElementById('edit_screenshot')?.addEventListener('change', editScreenshotChangeHandler);
 
 function clearEditImage() {
-    document.getElementById('edit_screenshot').value = '';
+    // Replace the file input with a fresh clone so the browser truly clears it
+    const inp = document.getElementById('edit_screenshot');
+    const newInp = inp.cloneNode(true);
+    inp.parentNode.replaceChild(newInp, inp);
+    // Re-attach the change listener to the new input
+    newInp.addEventListener('change', editScreenshotChangeHandler);
     document.getElementById('editImagePreview').innerHTML = '';
     document.getElementById('editImagePreview').classList.add('hidden');
     document.querySelector('#editUploadZone .upload-label').classList.remove('hidden');

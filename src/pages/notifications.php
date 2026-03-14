@@ -42,6 +42,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $success[] = 'All notifications cleared.';
         }
 
+        // ── Admin: send to specific user ──────────────────────
+        if ($action === 'send_to_user' && $user['role'] === 'admin') {
+            $targetUserId = (int)($_POST['target_user_id'] ?? 0);
+            $msgText      = trim($_POST['message_text_user'] ?? '');
+            $msgType      = $_POST['notification_type_user'] ?? 'admin_action';
+            $validTypes   = ['high_risk','medium_risk','info','admin_action'];
+            if (!in_array($msgType, $validTypes, true)) $msgType = 'admin_action';
+
+            if (!$targetUserId) {
+                $errors[] = 'Please select a user to send to.';
+            } elseif (strlen($msgText) < 5) {
+                $errors[] = 'Message must be at least 5 characters.';
+            } else {
+                // Confirm the user exists and is active
+                $chk = $db->prepare('SELECT full_name FROM users WHERE user_id = ? AND is_active = 1');
+                $chk->execute([$targetUserId]);
+                $targetUser = $chk->fetch();
+                if (!$targetUser) {
+                    $errors[] = 'User not found or inactive.';
+                } else {
+                    $db->prepare(
+                        'INSERT INTO notifications
+                            (recipient_user_id, incident_id, notification_type, message_text, is_read, created_at)
+                         VALUES (?, NULL, ?, ?, 0, NOW())'
+                    )->execute([$targetUserId, $msgType, $msgText]);
+                    $success[] = 'Notification sent to ' . htmlspecialchars($targetUser['full_name']) . '.';
+                }
+            }
+        }
+
         // ── Admin: broadcast ──────────────────────────────────
         if ($action === 'broadcast' && $user['role'] === 'admin') {
             $msgText  = trim($_POST['message_text'] ?? '');
@@ -84,12 +114,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } elseif (strlen($msgText) < 1) {
                 $errors[] = 'Message cannot be empty.';
             } else {
-                $db->prepare(
-                    'UPDATE notifications
-                     SET message_text = ?, notification_type = ?, is_read = ?
-                     WHERE notification_id = ?'
-                )->execute([$msgText, $msgType, $isRead, $nid]);
-                $success[] = 'Notification #' . $nid . ' updated.';
+                // Fetch the original row so we can update all broadcast copies
+                $orig = $db->prepare('SELECT message_text, notification_type FROM notifications WHERE notification_id = ?');
+                $orig->execute([$nid]);
+                $origRow = $orig->fetch();
+
+                if ($origRow) {
+                    // Update ALL rows sharing the same message + type (broadcast copies)
+                    $updated = $db->prepare(
+                        'UPDATE notifications
+                         SET message_text = ?, notification_type = ?
+                         WHERE message_text = ? AND notification_type = ?'
+                    );
+                    $updated->execute([$msgText, $msgType, $origRow['message_text'], $origRow['notification_type']]);
+                    $rowCount = $updated->rowCount();
+
+                    // Apply is_read only to this specific notification row
+                    $db->prepare('UPDATE notifications SET is_read = ? WHERE notification_id = ?')
+                       ->execute([$isRead, $nid]);
+
+                    $success[] = 'Notification updated' . ($rowCount > 1 ? " across {$rowCount} recipients." : '.');
+                } else {
+                    $errors[] = 'Notification not found.';
+                }
             }
         }
     }
@@ -111,6 +158,14 @@ if ($user['role'] === 'admin') {
 
 $pageTitle = 'Notifications';
 include __DIR__ . '/../includes/header.php';
+
+// Admin: load active users for targeted messaging
+$allActiveUsers = [];
+if ($user['role'] === 'admin') {
+    $allActiveUsers = $db->query(
+        'SELECT user_id, full_name, email, role FROM users WHERE is_active = 1 ORDER BY full_name ASC'
+    )->fetchAll();
+}
 
 $validTypes = ['high_risk','medium_risk','info','admin_action'];
 $typeLabels = [
@@ -180,6 +235,52 @@ $typeLabels = [
             <button type="submit" class="btn btn-primary"
                     onclick="return confirm('Send this notification to ALL active users?')">
                 📤 Broadcast to All Users
+            </button>
+        </form>
+    </div>
+    <?php endif; ?>
+
+    <!-- ── ADMIN: Send to specific user ───────────────────── -->
+    <?php if ($user['role'] === 'admin'): ?>
+    <div class="card" style="border-left:4px solid #0891b2; background:#f0f9ff;">
+        <h2 style="color:#0e7490;">🎯 Send Notification to Specific User</h2>
+        <p style="color:var(--color-muted);font-size:.925rem;margin-bottom:1rem;">
+            Send a private message to one user only.
+        </p>
+        <form method="POST">
+            <?= csrfField() ?>
+            <input type="hidden" name="action" value="send_to_user">
+            <div class="form-inline" style="flex-wrap:wrap;gap:1rem;">
+                <div class="form-group" style="flex:2;min-width:200px;">
+                    <label for="target_user_id">Recipient</label>
+                    <select id="target_user_id" name="target_user_id" required style="width:100%;">
+                        <option value="">— Select a user —</option>
+                        <?php foreach ($allActiveUsers as $u): ?>
+                            <option value="<?= $u['user_id'] ?>">
+                                <?= e($u['full_name']) ?> (<?= e($u['email']) ?> · <?= ucfirst($u['role']) ?>)
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="form-group" style="flex:1;min-width:160px;">
+                    <label for="notif_type_user">Type</label>
+                    <select id="notif_type_user" name="notification_type_user" style="width:100%;">
+                        <?php foreach ($typeLabels as $val => $label): ?>
+                            <option value="<?= $val ?>" <?= $val === 'admin_action' ? 'selected' : '' ?>>
+                                <?= $label ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="form-group" style="flex:3;min-width:240px;">
+                    <label for="msg_user">Message</label>
+                    <textarea id="msg_user" name="message_text_user" rows="2"
+                        placeholder="e.g. Your account has been reviewed."
+                        required minlength="5" style="width:100%;"></textarea>
+                </div>
+            </div>
+            <button type="submit" class="btn btn-primary">
+                📨 Send to User
             </button>
         </form>
     </div>

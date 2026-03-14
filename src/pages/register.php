@@ -22,7 +22,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if (strlen($data['full_name']) < 2)   $errors[] = 'Please enter your full name.';
         if (!filter_var($data['email'], FILTER_VALIDATE_EMAIL)) $errors[] = 'Invalid email address.';
-        if (strlen($password) < 8)             $errors[] = 'Password must be at least 8 characters.';
+        if (strlen($password) < 7)             $errors[] = 'Password must be at least 7 characters.';
         if ($password !== $confirm)            $errors[] = 'Passwords do not match.';
 
         if (!$errors) {
@@ -82,7 +82,7 @@ include __DIR__ . '/../includes/header.php';
             <div class="form-group">
                 <label for="password">Password</label>
                 <input type="password" id="password" name="password"
-                       placeholder="At least 8 characters" required minlength="8">
+                       placeholder="At least 7 characters" required minlength="7">
             </div>
 
             <div class="form-group">

@@ -51,8 +51,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if (!password_verify($current, $profile['password_hash'])) {
                 $errors[] = 'Current password is incorrect.';
-            } elseif (strlen($new) < 8) {
-                $errors[] = 'New password must be at least 8 characters.';
+            } elseif (strlen($new) < 7) {
+                $errors[] = 'New password must be at least 7 characters.';
             } elseif ($new !== $confirm) {
                 $errors[] = 'New passwords do not match.';
             } else {
@@ -116,7 +116,7 @@ include __DIR__ . '/../includes/header.php';
             </div>
             <div class="form-group">
                 <label>New Password</label>
-                <input type="password" name="new_password" required minlength="8">
+                <input type="password" name="new_password" required minlength="7">
             </div>
             <div class="form-group">
                 <label>Confirm New Password</label>
