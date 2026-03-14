@@ -239,7 +239,7 @@ $incidents = [
      'Do not click any links. Log into Netflix directly at netflix.com to check your actual account status.'],
 
     ['gokafor@example.com', 20,
-     'A man called saying he is from the government and I qualify for a $9,000 federal grant that I don't have to pay back. I just need to pay a $200 processing fee.',
+     'A man called saying he is from the government and I qualify for a $9,000 federal grant that I don\'t have to pay back. I just need to pay a $200 processing fee.',
      'analyzed', 92, 'impersonation',
      ['false_benefit','upfront_fee','authority_impersonation'],
      'The government does not call people to offer grants, and never requires a fee to receive one.',
@@ -265,7 +265,7 @@ $incidents = [
      'I received a call from someone claiming to be my bank fraud department. They said my debit card was used in another state and asked me to verify my card number and PIN to freeze the card.',
      'analyzed', 91, 'phishing',
      ['authority_impersonation','urgency','credential_harvesting'],
-     'Your bank's fraud department will never ask for your PIN. This is a scam designed to steal your card details.',
+     'Your bank\'s fraud department will never ask for your PIN. This is a scam designed to steal your card details.',
      'Hang up. Call your bank using the number on the back of your card to check on any real fraud alerts.'],
 
     // ── Chester Bloom (no caregiver) ──────────────────────────
