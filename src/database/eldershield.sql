@@ -32,7 +32,7 @@ CREATE TABLE incidents (
     user_id      INT  NOT NULL,
     content      TEXT NOT NULL,
     image_path   VARCHAR(500) DEFAULT NULL,
-    status       ENUM('pending','analyzed','reviewed','dismissed') NOT NULL DEFAULT 'pending',
+    status       ENUM('pending','cleared','analyzed','reviewed','dismissed') NOT NULL DEFAULT 'pending',
     submitted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
 ) ENGINE=InnoDB;

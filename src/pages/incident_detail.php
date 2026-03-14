@@ -129,13 +129,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    // ── Admin: clear analysis (leaves blank for elder to reprompt) ──
+    // ── Admin: clear analysis (leaves blank for elder to re-submit) ──
     if ($action === 'clear_analysis' && $user['role'] === 'admin') {
         $db->prepare('DELETE FROM analysis WHERE incident_id = ?')->execute([$incidentId]);
-        $db->prepare('UPDATE incidents SET status = "pending" WHERE incident_id = ?')
+        // Use 'cleared' status — distinct from 'pending' (AI is running).
+        // 'cleared' means the admin wiped it; the elder should review and re-submit.
+        $db->prepare('UPDATE incidents SET status = "cleared" WHERE incident_id = ?')
            ->execute([$incidentId]);
 
-        setFlash('success', 'Analysis cleared. The elder can now edit and re-submit their report.');
+        setFlash('success', 'Analysis cleared. The elder will be prompted to review and re-submit their report.');
         header('Location: ' . APP_URL . '/pages/incident_detail.php?id=' . $incidentId);
         exit;
     }
@@ -196,7 +198,8 @@ $ownerStmt->execute([$incident['user_id']]);
 $ownerName = $ownerStmt->fetchColumn();
 
 $isOwner  = ($user['role'] === 'elder' && $incident['user_id'] == $user['user_id']);
-$showEdit = $isOwner && ($incident['status'] !== 'pending');
+// Show edit form if owner AND status is not 'pending' (AI running) — 'cleared' should allow editing
+$showEdit = $isOwner && !in_array($incident['status'], ['pending']);
 
 $validCategories = [
     'phishing','impersonation','romance_scam','tech_support',
@@ -283,7 +286,7 @@ include __DIR__ . '/../includes/header.php';
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:.75rem; margin-bottom:1.25rem;">
             <h2>🔧 Admin — Analysis Controls</h2>
             <div style="display:flex; gap:.6rem; flex-wrap:wrap;">
-                <?php if ($incident['status'] !== 'pending'): ?>
+                <?php if (!in_array($incident['status'], ['pending', 'cleared'])): ?>
                 <button class="btn btn-sm btn-secondary" onclick="toggleAdminEdit()">
                     ✏️ Edit Analysis
                 </button>
@@ -451,8 +454,13 @@ include __DIR__ . '/../includes/header.php';
 
         <?php if ($isOwner && $incident['status'] === 'pending'): ?>
         <p style="margin-top:.75rem; font-size:.875rem; color:var(--color-muted);">
-            ⏳ You can edit your report once the current analysis finishes.
+            ⏳ Analysis is running. You can edit your report once it finishes.
         </p>
+        <?php elseif ($isOwner && $incident['status'] === 'cleared'): ?>
+        <div class="alert alert-info" style="margin-top:.75rem;">
+            ✏️ <strong>An admin has cleared the previous analysis.</strong>
+            Please review your description below, make any changes if needed, and re-submit so it can be re-analyzed.
+        </div>
         <?php endif; ?>
     </div>
 
@@ -465,7 +473,7 @@ include __DIR__ . '/../includes/header.php';
             <input type="hidden" name="action" value="update_status">
             <div class="form-inline">
                 <select name="status">
-                    <?php foreach (['pending','analyzed','reviewed','dismissed'] as $s): ?>
+                    <?php foreach (['pending','cleared','analyzed','reviewed','dismissed'] as $s): ?>
                         <option value="<?= $s ?>" <?= $incident['status'] == $s ? 'selected' : '' ?>>
                             <?= ucfirst($s) ?>
                         </option>
@@ -499,7 +507,7 @@ include __DIR__ . '/../includes/header.php';
 
 </div>
 
-<?php if (!$analysisReady): ?>
+<?php if (!$analysisReady && $incident['status'] === 'pending'): ?>
 <script>setTimeout(function() { window.location.reload(); }, 5000);</script>
 <?php endif; ?>
 
