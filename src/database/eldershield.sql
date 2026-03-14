@@ -1,95 +1,108 @@
 -- ============================================================
--- ElderShield Database Schema
--- MySQL (MAMP compatible)
+-- ElderShield — Complete Database Schema (Simplified)
+-- Single file. Run once. No separate migrations needed.
 -- ============================================================
 
-CREATE DATABASE IF NOT EXISTS eldershield CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE DATABASE IF NOT EXISTS eldershield
+    CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE eldershield;
 
 -- ============================================================
 -- USERS
 -- ============================================================
 CREATE TABLE users (
-    user_id     INT AUTO_INCREMENT PRIMARY KEY,
-    full_name   VARCHAR(150)        NOT NULL,
-    email       VARCHAR(255)        NOT NULL UNIQUE,
-    password_hash VARCHAR(255)      NOT NULL,
-    role        ENUM('elder','caregiver','admin') NOT NULL DEFAULT 'elder',
-    is_active   TINYINT(1)         NOT NULL DEFAULT 1,
-    created_at  DATETIME            NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at  DATETIME            NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    user_id       INT AUTO_INCREMENT PRIMARY KEY,
+    full_name     VARCHAR(150) NOT NULL,
+    email         VARCHAR(255) NOT NULL UNIQUE,
+    password_hash VARCHAR(255) NOT NULL,
+    role          ENUM('elder','caregiver','admin') NOT NULL DEFAULT 'elder',
+    -- Caregiver plan: 'free' = 2 elder links, 'premium' = unlimited
+    plan          ENUM('free','premium') NOT NULL DEFAULT 'free',
+    plan_expires  DATETIME NULL DEFAULT NULL,    -- NULL = no expiry (free tier)
+    plan_paused   TINYINT(1) NOT NULL DEFAULT 0, -- 1 = admin paused, blocks premium features
+    is_active     TINYINT(1)  NOT NULL DEFAULT 1,
+    created_at    DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
 
 -- ============================================================
 -- INCIDENTS
 -- ============================================================
 CREATE TABLE incidents (
-    incident_id     INT AUTO_INCREMENT PRIMARY KEY,
-    user_id         INT             NOT NULL,
-    content         TEXT            NOT NULL,
-    image_path      VARCHAR(500)    DEFAULT NULL,
-    status          ENUM('pending','analyzed','reviewed','dismissed') NOT NULL DEFAULT 'pending',
-    submitted_at    DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at      DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    incident_id  INT AUTO_INCREMENT PRIMARY KEY,
+    user_id      INT  NOT NULL,
+    content      TEXT NOT NULL,
+    image_path   VARCHAR(500) DEFAULT NULL,
+    status       ENUM('pending','analyzed','reviewed','dismissed') NOT NULL DEFAULT 'pending',
+    submitted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
 -- ============================================================
 -- ANALYSIS
+-- One row per incident. Populated by background Ollama worker.
 -- ============================================================
 CREATE TABLE analysis (
-    analysis_id         INT AUTO_INCREMENT PRIMARY KEY,
-    incident_id         INT             NOT NULL,
-    scam_probability    DECIMAL(5,2)    NOT NULL DEFAULT 0.00,  -- 0.00 to 100.00
-    scam_category       VARCHAR(100)    DEFAULT NULL,
-    manipulation_tactics JSON           DEFAULT NULL,
-    explanation_simple  TEXT            DEFAULT NULL,
-    recommended_action  TEXT            DEFAULT NULL,
-    ai_raw_response     JSON            DEFAULT NULL,
-    admin_override      TINYINT(1)     NOT NULL DEFAULT 0,
-    created_at          DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    incident_id        INT          NOT NULL PRIMARY KEY, -- 1-to-1 with incidents
+    scam_probability   TINYINT      NOT NULL DEFAULT 0,   -- 0-100, TINYINT saves space
+    scam_category      VARCHAR(50)  DEFAULT NULL,
+    manipulation_tactics JSON       DEFAULT NULL,
+    explanation_simple TEXT         DEFAULT NULL,
+    recommended_action TEXT         DEFAULT NULL,
+    created_at         DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (incident_id) REFERENCES incidents(incident_id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
 -- ============================================================
--- NOTIFICATIONS
--- ============================================================
-CREATE TABLE notifications (
-    notification_id     INT AUTO_INCREMENT PRIMARY KEY,
-    incident_id         INT             NOT NULL,
-    recipient_user_id   INT             NOT NULL,
-    message_text        TEXT            NOT NULL,
-    notification_type   ENUM('high_risk','medium_risk','info','admin_action') NOT NULL DEFAULT 'info',
-    is_read             TINYINT(1)     NOT NULL DEFAULT 0,
-    created_at          DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (incident_id) REFERENCES incidents(incident_id) ON DELETE CASCADE,
-    FOREIGN KEY (recipient_user_id) REFERENCES users(user_id) ON DELETE CASCADE
-) ENGINE=InnoDB;
-
--- ============================================================
--- ACCOUNT_LINKS (caregiver <-> elder relationships)
+-- ACCOUNT_LINKS  (caregiver <-> elder)
 -- ============================================================
 CREATE TABLE account_links (
-    link_id             INT AUTO_INCREMENT PRIMARY KEY,
-    elder_user_id       INT             NOT NULL,
-    caregiver_user_id   INT             NOT NULL,
-    relationship_type   VARCHAR(100)    DEFAULT 'caregiver',
-    status              ENUM('pending','active','revoked') NOT NULL DEFAULT 'pending',
-    created_at          DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    link_id           INT AUTO_INCREMENT PRIMARY KEY,
+    elder_user_id     INT  NOT NULL,
+    caregiver_user_id INT  NOT NULL,
+    status            ENUM('pending','active','revoked') NOT NULL DEFAULT 'pending',
+    created_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uq_link (elder_user_id, caregiver_user_id),
-    FOREIGN KEY (elder_user_id) REFERENCES users(user_id) ON DELETE CASCADE,
+    FOREIGN KEY (elder_user_id)     REFERENCES users(user_id) ON DELETE CASCADE,
     FOREIGN KEY (caregiver_user_id) REFERENCES users(user_id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
 -- ============================================================
--- SEED DATA (demo admin + elder + caregiver)
--- Passwords are bcrypt of "password123"
+-- NOTIFICATIONS
+-- incident_id is nullable — admin broadcasts have no incident.
 -- ============================================================
-INSERT INTO users (full_name, email, password_hash, role) VALUES
-('Admin User',     'admin@eldershield.com',     '$2y$12$YourHashHereReplace', 'admin'),
-('Dorothy Johnson','dorothy@example.com',        '$2y$12$YourHashHereReplace', 'elder'),
-('Sarah Johnson',  'sarah@example.com',          '$2y$12$YourHashHereReplace', 'caregiver');
+CREATE TABLE notifications (
+    notification_id   INT AUTO_INCREMENT PRIMARY KEY,
+    incident_id       INT  NULL DEFAULT NULL,
+    recipient_user_id INT  NOT NULL,
+    message_text      TEXT NOT NULL,
+    notification_type ENUM('high_risk','medium_risk','info','admin_action') NOT NULL DEFAULT 'info',
+    is_read           TINYINT(1) NOT NULL DEFAULT 0,
+    created_at        DATETIME   NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (incident_id)       REFERENCES incidents(incident_id) ON DELETE CASCADE,
+    FOREIGN KEY (recipient_user_id) REFERENCES users(user_id) ON DELETE CASCADE
+) ENGINE=InnoDB;
 
--- You must regenerate hashes using PHP:
--- echo password_hash('password123', PASSWORD_BCRYPT, ['cost'=>12]);
--- Then UPDATE users SET password_hash='...' WHERE email='...';
+-- ============================================================
+-- INVOICES  (caregiver billing — one row per billing month)
+-- ============================================================
+CREATE TABLE invoices (
+    invoice_id     INT AUTO_INCREMENT PRIMARY KEY,
+    caregiver_id   INT  NOT NULL,
+    billing_month  DATE NOT NULL,              -- always 1st of month, e.g. 2026-03-01
+    amount_cents   INT  NOT NULL DEFAULT 0,    -- e.g. 999 = $9.99
+    status         ENUM('pending','paid','failed') NOT NULL DEFAULT 'pending',
+    paid_at        DATETIME DEFAULT NULL,
+    created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_invoice (caregiver_id, billing_month),
+    FOREIGN KEY (caregiver_id) REFERENCES users(user_id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+-- ============================================================
+-- SEED DATA
+-- Run database/seed.php to generate correct bcrypt hashes.
+-- These placeholder hashes will be replaced by seed.php.
+-- ============================================================
+INSERT INTO users (full_name, email, password_hash, role, plan) VALUES
+    ('Admin User',      'admin@eldershield.com', '$2y$12$placeholder', 'admin',     'premium'),
+    ('Dorothy Johnson', 'dorothy@example.com',   '$2y$12$placeholder', 'elder',     'free'),
+    ('Sarah Johnson',   'sarah@example.com',     '$2y$12$placeholder', 'caregiver', 'free');

@@ -3,6 +3,7 @@
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/helpers.php';
+require_once __DIR__ . '/../includes/subscription_helper.php';
 require_once __DIR__ . '/../includes/billing_helper.php';
 
 requireLogin();
@@ -52,18 +53,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                              ? (int)($_POST['caregiver_id'] ?? $user['user_id'])
                              : (int)$user['user_id'];
 
-            $elderStmt = $db->prepare('SELECT user_id FROM users WHERE email=? AND role="elder" AND is_active=1');
-            $elderStmt->execute([$elderEmail]);
-            $elder = $elderStmt->fetch();
-
-            if (!$elder) {
-                $errors[] = 'No active elder account found with that email.';
+            // Enforce subscription link limit for caregivers (admins bypass)
+            if ($user['role'] === 'caregiver' && !caregiverCanLink($caregiverId)) {
+                $errors[] = 'You have reached your free plan limit of ' . FREE_LINK_LIMIT . ' linked elders. '
+                          . '<a href="' . APP_URL . '/pages/subscription.php">Upgrade to Premium</a> for unlimited links.';
             } else {
-                $result = linkCaregiverToElder((int)$elder['user_id'], $caregiverId);
-                if ($result['success']) {
-                    $success[] = 'Link request sent. The elder must approve it.';
+                $elderStmt = $db->prepare('SELECT user_id FROM users WHERE email=? AND role="elder" AND is_active=1');
+                $elderStmt->execute([$elderEmail]);
+                $elder = $elderStmt->fetch();
+
+                if (!$elder) {
+                    $errors[] = 'No active elder account found with that email.';
                 } else {
-                    $errors[] = $result['message'];
+                    $result = linkCaregiverToElder((int)$elder['user_id'], $caregiverId);
+                    if ($result['success']) {
+                        $success[] = 'Link request sent. The elder must approve it.';
+                    } else {
+                        $errors[] = $result['message'];
+                    }
                 }
             }
         }
@@ -76,6 +83,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($action === 'revoke_link') {
             revokeLink((int)($_POST['link_id'] ?? 0));
             $success[] = 'Link revoked.';
+        }
+
+        if ($action === 'reactivate_link') {
+            $lid = (int)($_POST['link_id'] ?? 0);
+            if ($lid) {
+                getDB()->prepare('UPDATE account_links SET status = "active" WHERE link_id = ?')
+                       ->execute([$lid]);
+                $success[] = 'Link reactivated.';
+            }
         }
 
         // Admin: delete user
@@ -154,7 +170,6 @@ include __DIR__ . '/../includes/header.php';
                 <tr>
                     <th>Elder</th>
                     <?php if ($user['role']==='admin'): ?><th>Caregiver</th><?php endif; ?>
-                    <th>Type</th>
                     <th>Status</th>
                     <th>Linked</th>
                     <th>Actions</th>
@@ -165,9 +180,8 @@ include __DIR__ . '/../includes/header.php';
                 <tr>
                     <td><?= e($l['elder_name']) ?><br><small><?= e($l['elder_email']) ?></small></td>
                     <?php if ($user['role']==='admin'): ?><td><?= e($l['caregiver_name']) ?></td><?php endif; ?>
-                    <td><?= e($l['relationship_type']) ?></td>
                     <td><span class="status-badge status-<?= e($l['status']) ?>"><?= e(ucfirst($l['status'])) ?></span></td>
-                    <td><?= $l['linked_at'] ? e(date('M j, Y', strtotime($l['linked_at']))) : '—' ?></td>
+                    <td><?= e(date("M j, Y", strtotime($l["created_at"]))) ?></td>
                     <td>
                         <?php if ($l['status'] === 'pending'): ?>
                             <form method="POST" style="display:inline">
@@ -183,8 +197,19 @@ include __DIR__ . '/../includes/header.php';
                                 <input type="hidden" name="action" value="revoke_link">
                                 <input type="hidden" name="link_id" value="<?= $l['link_id'] ?>">
                                 <button class="btn btn-sm btn-danger"
-                                        onclick="return confirm('Revoke this relationship? Prorated billing will apply.')">
+                                        onclick="return confirm('Revoke this relationship?')">
                                     Revoke
+                                </button>
+                            </form>
+                        <?php endif; ?>
+                        <?php if ($l['status'] === 'revoked'): ?>
+                            <form method="POST" style="display:inline">
+                                <?= csrfField() ?>
+                                <input type="hidden" name="action" value="reactivate_link">
+                                <input type="hidden" name="link_id" value="<?= $l['link_id'] ?>">
+                                <button class="btn btn-sm btn-success"
+                                        onclick="return confirm('Reactivate this link?')">
+                                    Reactivate
                                 </button>
                             </form>
                         <?php endif; ?>

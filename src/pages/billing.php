@@ -131,7 +131,7 @@ require_once __DIR__ . '/../includes/header.php';
                         <?= e($link['full_name']) ?><br>
                         <small style="color:var(--color-muted)"><?= e($link['email']) ?></small>
                     </td>
-                    <td><?= $link['linked_at'] ? date('M j, Y', strtotime($link['linked_at'])) : '—' ?></td>
+                    <td><?= date("M j, Y", strtotime($link["created_at"])) ?></td>
                     <td><?= formatCents(RATE_CENTS) ?>/mo</td>
                 </tr>
             <?php endforeach; ?>

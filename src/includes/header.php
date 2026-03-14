@@ -4,16 +4,21 @@ require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/helpers.php';
 require_once __DIR__ . '/../includes/billing_helper.php';
+require_once __DIR__ . '/../includes/subscription_helper.php';
 
 $user        = currentUser();
 $unreadCount = isLoggedIn() ? countUnreadNotifications((int)$user['user_id']) : 0;
 $pageTitle   = $pageTitle ?? APP_NAME;
 $flash       = getFlash();
 
-// Check billing restriction for caregivers — enforced server-side on every page load
 $billingRestricted = false;
 if (isLoggedIn() && $user['role'] === 'caregiver') {
     $billingRestricted = caregiverAccessRestricted((int)$user['user_id']);
+}
+
+$caregiverPlan = 'free';
+if (isLoggedIn() && in_array($user['role'], ['caregiver','admin'])) {
+    $caregiverPlan = getUserPlan((int)$user['user_id']);
 }
 ?>
 <!DOCTYPE html>
@@ -37,16 +42,22 @@ if (isLoggedIn() && $user['role'] === 'caregiver') {
     <div class="nav-brand">
         <a href="<?= APP_URL ?>/pages/dashboard.php">🛡️ ElderShield</a>
     </div>
+
+    <!-- Hamburger for mobile -->
+    <button class="nav-hamburger" id="navHamburger" aria-label="Open menu">☰</button>
+
     <?php if (isLoggedIn()): ?>
-    <ul class="nav-links">
+    <ul class="nav-links" id="navLinks">
         <?php if ($user['role'] === 'elder'): ?>
             <li><a href="<?= APP_URL ?>/pages/submit.php">Report Scam</a></li>
             <li><a href="<?= APP_URL ?>/pages/my_incidents.php">My Reports</a></li>
-        <?php elseif (in_array($user['role'], ['caregiver', 'admin'])): ?>
+
+        <?php elseif (in_array($user['role'], ['caregiver','admin'])): ?>
             <li><a href="<?= APP_URL ?>/pages/dashboard.php">Dashboard</a></li>
             <li><a href="<?= APP_URL ?>/pages/incidents.php">All Reports</a></li>
             <?php if ($user['role'] === 'admin'): ?>
                 <li><a href="<?= APP_URL ?>/pages/admin_users.php">Users</a></li>
+                <li><a href="<?= APP_URL ?>/pages/admin_subscriptions.php">Subscriptions</a></li>
             <?php endif; ?>
             <?php if ($user['role'] === 'caregiver'): ?>
                 <li>
@@ -58,19 +69,31 @@ if (isLoggedIn() && $user['role'] === 'caregiver') {
             <?php endif; ?>
         <?php endif; ?>
 
+        <!-- Notifications bell -->
         <li>
             <a href="<?= APP_URL ?>/pages/notifications.php" class="notif-link" id="notif-bell">
-                🔔 <span id="notif-badge" class="badge-notif" <?= $unreadCount > 0 ? '' : 'style="display:none"' ?>><?= $unreadCount ?></span>
+                🔔 <span id="notif-badge" class="badge-notif"
+                    <?= $unreadCount > 0 ? '' : 'style="display:none"' ?>><?= $unreadCount ?></span>
             </a>
         </li>
+
+        <!-- Subscription button — caregivers only, top-right -->
+        <?php if (in_array($user['role'], ['caregiver','admin'])): ?>
+        <li>
+            <a href="<?= APP_URL ?>/pages/subscription.php"
+               class="btn btn-sm <?= $caregiverPlan === 'premium' ? 'btn-success' : 'btn-primary' ?> nav-sub-btn">
+                <?= $caregiverPlan === 'premium' ? '⭐ Premium' : '⭐ Upgrade' ?>
+            </a>
+        </li>
+        <?php endif; ?>
 
         <li><a href="<?= APP_URL ?>/pages/profile.php"><?= e($user['full_name']) ?></a></li>
         <li><a href="<?= APP_URL ?>/pages/logout.php">Logout</a></li>
     </ul>
     <?php else: ?>
-    <ul class="nav-links">
+    <ul class="nav-links" id="navLinks">
         <li><a href="<?= APP_URL ?>/pages/login.php">Login</a></li>
-        <li><a href="<?= APP_URL ?>/pages/register.php">Register</a></li>
+        <li><a href="<?= APP_URL ?>/pages/register.php" class="btn btn-primary btn-sm">Sign Up</a></li>
     </ul>
     <?php endif; ?>
 </nav>
@@ -82,3 +105,11 @@ if (isLoggedIn() && $user['role'] === 'caregiver') {
 <?php endif; ?>
 
 <main class="main-content">
+
+<script>
+// Mobile nav toggle
+document.getElementById('navHamburger')?.addEventListener('click', function() {
+    document.getElementById('navLinks')?.classList.toggle('nav-open');
+    this.textContent = this.textContent.trim() === '☰' ? '✕' : '☰';
+});
+</script>

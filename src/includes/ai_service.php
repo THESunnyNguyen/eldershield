@@ -5,7 +5,6 @@
 
 require_once __DIR__ . '/../config/config.php';
 
-// ── Analyze incident — called by background worker only ──────
 function analyzeIncident(string $text, ?string $imagePath = null): array {
     $systemPrompt = 'You are ElderShield, a scam detection assistant protecting elderly users. '
         . 'Analyze the submitted content and return ONLY a valid JSON object. '
@@ -42,10 +41,7 @@ function analyzeIncident(string $text, ?string $imagePath = null): array {
         'model'    => OLLAMA_MODEL,
         'messages' => $messages,
         'stream'   => false,
-        'options'  => [
-            'temperature' => 0.1,
-            'num_ctx'     => 2048,
-        ],
+        'options'  => ['temperature' => 0.1, 'num_ctx' => 2048],
     ]);
 
     $ch = curl_init(OLLAMA_URL . '/api/chat');
@@ -82,32 +78,31 @@ function analyzeIncident(string $text, ?string $imagePath = null): array {
     return parseAIResponse($rawText);
 }
 
-// ── Fire analysis in background so Apache does not freeze ────
 function analyzeIncidentAsync(int $incidentId, string $text, ?string $imagePath = null): void {
-    $phpBin     = 'C:\\MAMP\\bin\\php\\php8.3.1\\php.exe';
+    $phpBinaries = glob('C:\\MAMP\\bin\\php\\php*\\php.exe');
+    if (!empty($phpBinaries)) {
+        $phpBin = end($phpBinaries);
+    } else {
+        $phpBin = 'php';
+        foreach (['C:\\MAMP\\bin\\php\\php8.3.0\\php.exe','C:\\MAMP\\bin\\php\\php8.2.0\\php.exe','C:\\php\\php.exe'] as $c) {
+            if (file_exists($c)) { $phpBin = $c; break; }
+        }
+    }
+
     $scriptPath = str_replace('/', DIRECTORY_SEPARATOR, APP_ROOT . '/api/run_analysis.php');
-    $imageArg   = ($imagePath && $imagePath !== '') ? escapeshellarg($imagePath) : '""';
-
-    // Write text to temp file to avoid shell escaping issues on Windows
-    $tmpFile = tempnam(sys_get_temp_dir(), 'es_') . '.txt';
+    $tmpFile    = tempnam(sys_get_temp_dir(), 'es_');
     file_put_contents($tmpFile, $text);
+    $imageArg = ($imagePath && $imagePath !== '') ? escapeshellarg($imagePath) : '""';
 
-    $cmd = sprintf(
-        'start /B "" "%s" "%s" "%s" "%s" %s',
-        $phpBin,
-        $scriptPath,
-        (string)$incidentId,
-        $tmpFile,
-        $imageArg
+    $cmd = sprintf('start /B "" "%s" "%s" %s "%s" %s > NUL 2>&1',
+        $phpBin, $scriptPath,
+        escapeshellarg((string)$incidentId), $tmpFile, $imageArg
     );
-
     pclose(popen($cmd, 'r'));
 }
 
-// ── Parse AI JSON response ────────────────────────────────────
 function parseAIResponse(string $rawText): array {
     $clean = preg_replace('/^```(?:json)?\s*|\s*```$/m', '', trim($rawText));
-
     $jsonStart = strpos($clean, '{');
     $jsonEnd   = strrpos($clean, '}');
     if ($jsonStart !== false && $jsonEnd !== false) {
@@ -120,11 +115,8 @@ function parseAIResponse(string $rawText): array {
         return defaultAnalysis('AI returned an unreadable response.');
     }
 
-    $validCategories = [
-        'phishing', 'impersonation', 'romance_scam', 'tech_support',
-        'lottery_prize', 'grandparent_scam', 'investment_fraud', 'other', 'not_a_scam'
-    ];
-
+    $validCategories = ['phishing','impersonation','romance_scam','tech_support',
+                        'lottery_prize','grandparent_scam','investment_fraud','other','not_a_scam'];
     return [
         'scam_probability'     => max(0, min(100, (int)($data['scam_probability'] ?? 0))),
         'scam_category'        => in_array($data['scam_category'] ?? '', $validCategories, true)
