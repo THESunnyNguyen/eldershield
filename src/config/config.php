@@ -7,6 +7,12 @@ define('APP_NAME', 'ElderShield');
 define('APP_URL',  'http://localhost/eldershield/src');
 define('APP_ROOT', __DIR__ . '/..');
 
+// ── Timezone ──────────────────────────────────────────────────
+// Set this to your server's local timezone so timestamps display correctly.
+// Full list: https://www.php.net/manual/en/timezones.php
+define('APP_TIMEZONE', 'America/Denver');
+date_default_timezone_set(APP_TIMEZONE);
+
 // ── Ollama (local AI) ─────────────────────────────────────────
 define('OLLAMA_URL',   'http://localhost:11434');
 define('OLLAMA_MODEL', 'qwen2.5vl:7b');

@@ -279,8 +279,13 @@ function riskBadge(float $probability): string {
 }
 
 function timeAgo(string $datetime): string {
-    $diff = (new DateTime())->diff(new DateTime($datetime));
-    if ($diff->days > 30)  return (new DateTime($datetime))->format('M j, Y');
+    $tz   = new DateTimeZone(defined('APP_TIMEZONE') ? APP_TIMEZONE : date_default_timezone_get());
+    $now  = new DateTime('now', $tz);
+    $then = new DateTime($datetime, $tz);
+    // If stored without timezone info, treat it as the app timezone
+    $diff = $now->diff($then);
+
+    if ($diff->days > 30)  return $then->format('M j, Y');
     if ($diff->days >= 1)  return $diff->days . 'd ago';
     if ($diff->h >= 1)     return $diff->h    . 'h ago';
     if ($diff->i >= 1)     return $diff->i    . 'm ago';
