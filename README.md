@@ -9,6 +9,10 @@ ElderShield is a cybersecurity-focused web application designed to protect elder
 
 ElderShield uses a three-role system with a role-aware interface for each user type.
 
+## Video Demo
+
+https://youtu.be/zMp5k4DBVxo
+
 ### Elder Interface
 A simplified, accessibility-first interface designed for seniors.
 
