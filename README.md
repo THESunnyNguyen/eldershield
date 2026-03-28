@@ -1,46 +1,17 @@
-# ElderShield 🛡️
-
-> AI-Powered Scam Detection & Awareness Platform
-
-![PHP](https://img.shields.io/badge/PHP-8.1+-777BB4?logo=php&logoColor=white)
-![MySQL](https://img.shields.io/badge/MySQL-4479A1?logo=mysql&logoColor=white)
-![Ollama](https://img.shields.io/badge/AI-Ollama%20Local-black)
-![License](https://img.shields.io/badge/License-Academic%20Use-blue)
-![Status](https://img.shields.io/badge/Status-Prototype-orange)
+# ElderShield
+AI-Powered Scam Detection & Awareness Platform
 
 ElderShield is a cybersecurity-focused web application designed to protect elderly users from scams such as phishing, impersonation fraud, tech support scams, romance scams, grandparent scams, and investment fraud. Seniors submit screenshots or descriptions of suspicious messages, calls, or emails. A local AI model (Ollama) analyzes the content and returns a plain-language risk assessment. Caregivers and admins are automatically notified of high-risk reports and can monitor, review, and intervene through a dedicated dashboard.
-
----
-
-## Table of Contents
-
-- [Demo](#demo)
-- [Project Overview](#project-overview)
-- [Goals](#goals)
-- [Prerequisites](#prerequisites)
-- [Local Setup](#local-setup)
-- [AI Component](#ai-component-key-differentiator)
-- [Database Schema](#database-schema)
-- [CRUD Functionality](#crud-functionality)
-- [Subscription & Billing](#subscription--billing)
-- [Dashboard Analytics](#dashboard-analytics)
-- [Notification System](#notification-system)
-- [Cybersecurity & Privacy](#cybersecurity--privacy)
-- [Technology Stack](#technology-stack)
-- [Team](#team)
-- [License](#license)
-
----
-
-## Demo
-
-[![▶ Watch the Demo](https://img.shields.io/badge/YouTube-Watch%20Demo-red?logo=youtube)](https://youtu.be/zMp5k4DBVxo)
 
 ---
 
 ## Project Overview
 
 ElderShield uses a three-role system with a role-aware interface for each user type.
+
+## Video Demo
+
+https://youtu.be/zMp5k4DBVxo
 
 ### Elder Interface
 A simplified, accessibility-first interface designed for seniors.
@@ -83,109 +54,6 @@ Key capabilities:
 
 ---
 
-## Prerequisites
-
-Before setting up ElderShield, make sure you have the following installed:
-
-| Requirement | Version | Notes |
-|---|---|---|
-| [MAMP](https://www.mamp.info/) or [XAMPP](https://www.apachefriends.org/) | Latest | Provides Apache + PHP + MySQL |
-| PHP | 8.1+ | Included with MAMP/XAMPP |
-| MySQL | 5.7+ | Included with MAMP/XAMPP |
-| [Ollama](https://ollama.com/) | Latest | Runs the AI model locally |
-| Git | Any | For cloning the repo |
-
----
-
-## Local Setup
-
-### 1. Clone the repository
-
-```bash
-git clone https://github.com/THESunnyNguyen/eldershield.git
-```
-
-Place the `eldershield/src` folder inside your web server's document root and rename it to `eldershield`:
-- **MAMP (Mac):** `/Applications/MAMP/htdocs/eldershield`
-- **XAMPP (Windows):** `C:\xampp\htdocs\eldershield`
-
-### 2. Start your local server
-
-Launch MAMP or XAMPP and start the **Apache** and **MySQL** services.
-
-### 3. Import the database schema
-
-1. Open **phpMyAdmin** at `http://localhost:8888/phpMyAdmin` (MAMP) or `http://localhost/phpmyadmin` (XAMPP)
-2. Create a new database named `eldershield`
-3. Select the database and click **Import**
-4. Upload `src/database/eldershield.sql` from the repo
-
-### 4. Configure the database connection
-
-Open `src/config/db.php` and confirm the credentials match your local setup:
-
-```php
-$host = 'localhost';
-$db   = 'eldershield';
-$user = 'root';
-$pass = 'root'; // MAMP default — adjust if different
-```
-
-### 5. Seed demo data
-
-In your browser, navigate to:
-
-```
-http://localhost:8888/eldershield/database/seed.php
-```
-
-This creates all demo users, incidents, and linked accounts. **Delete `seed.php` after running it.**
-
-### 6. Install and configure Ollama
-
-1. Download and install [Ollama](https://ollama.com/)
-2. Pull the vision model:
-```bash
-ollama pull qwen2.5vl:7b
-```
-3. Start the Ollama server:
-```bash
-ollama serve
-```
-Ollama must be running for AI analysis to work. Analysis runs asynchronously — the page loads immediately and refreshes when results are ready.
-
-### 7. Open the app
-
-Navigate to: `http://localhost:8888/eldershield` (MAMP) or `http://localhost/eldershield` (XAMPP)
-
-### 8. Demo accounts
-
-**Admins**
-
-| Email | Password |
-|---|---|
-| `admin@eldershield.com` | `password123` |
-| `bsmith@eldershield.com` | `mysecret` |
-
-**Caregivers**
-
-| Email | Password | Plan | Linked Elders |
-|---|---|---|---|
-| `sarah@example.com` | `password123` | Free | 2 |
-| `mjohnson@example.com` | `password123` | Premium | 4 |
-| `arivera@example.com` | `password123` | Premium | 3 |
-
-**Elders**
-
-| Email | Password | Incidents |
-|---|---|---|
-| `dorothy@example.com` | `password123` | 5 |
-| `hturner@example.com` | `password123` | 3 |
-| `emartinez@example.com` | `password123` | 3 |
-| `pjones@example.com` | `acrobat` | 2 |
-
----
-
 ## AI Component (Key Differentiator)
 
 ElderShield uses **Ollama** running locally to analyze scam reports — no external API keys or internet connection required. The default model is `qwen2.5vl:7b`, a vision-capable model that can analyze both text descriptions and uploaded screenshots.
@@ -217,7 +85,9 @@ Admins can manually override any field or trigger a fresh AI re-run from the inc
 
 Built on **MySQL** with 5 tables in a fully relational design.
 
-![ERD Diagram](docs/Latest_ERD.png)
+![ERD Diagram](docs/ERD.png)
+
+### Tables
 
 | Table | Purpose |
 |---|---|
@@ -326,15 +196,15 @@ Built on **MySQL** with 5 tables in a fully relational design.
 | Backend | PHP 8.1+ |
 | Database | MySQL (PDO) |
 | Frontend | HTML5 + CSS3 (custom, no framework) |
-| AI / NLP | Ollama (local) — default model: `qwen2.5vl:7b` |
+| AI / NLP | Ollama (local) — default model: `qwen3-vl:8b` |
 | Web Server | Apache via MAMP or XAMPP |
 | Security | bcrypt · CSRF tokens · PDO · session hardening · CSP headers |
 
 ---
 
 ## Team
-- [Sunny Nguyen](https://github.com/THESunnyNguyen)
-- [Joe Milner](https://github.com/syrm4)
+- Sunny Nguyen
+- Joe Milner
 - Cameron Hubbard
 
 ---
